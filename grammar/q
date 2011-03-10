@@ -813,7 +813,7 @@ __c52308d05ebb4ff61c5fc36e6d9c7a8a
 meta::message_color('state', 'purple');
 meta::message_color('states', 'yellow');
 meta::message_color('watch', 'blue');
-meta::note('queue', <<'__226dc433af3bc4b56370bc848fbe2a7a');
+meta::note('queue', <<'__9d4dde9b9272c40cd0875c579d4810ac');
 Grammar derivation details.
 Deriving grammars is probably not easy. My inclination is to go with an informal, ad-hoc algorithm based heavily on randomness. It doesn't have to build correct grammars, just grammars that
 are somewhat better than none.
@@ -825,7 +825,11 @@ Important points of these grammars are:
   3. Predictive information density; given that we've typed X, what is the expected information content of the next character?
   4. Parsing arbitrary valid source and identifying high- and low-information regions.
   5. Taking an ambiguous edit hint and constructing the most probable interpretation.
-__226dc433af3bc4b56370bc848fbe2a7a
+
+Compression strategies.
+How do we evaluate information density? There's more to it than counting ordered disjunctions for two reasons. First, ordered disjunctions can be rearranged to optimize compressability (to a
+point); and second, they can be heavily biased depending on selection frequency.
+__9d4dde9b9272c40cd0875c579d4810ac
 meta::parent('/home/spencertipping/bin/notes', <<'__320d51928ec8e2e370d67d30abe059b5');
 function::note
 meta::type::note

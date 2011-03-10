@@ -1,0 +1,9 @@
+#!/bin/bash
+each ./build-sample _ <<EOF
+c
+h
+js
+pm
+py
+rb
+EOF

@@ -1,4 +1,4 @@
 #!/bin/bash
 [[ -z $1 ]] && echo "Usage: $0 extension" && exit 1
 mkdir -p $1 && cd $1
-find / -name *.$1 | each 'test -f _ && ln -s _ $(md5sum _ | awk "{print \$1}")'
+find / -name *.$1 | each 'test -d _ || test -e _ && ln -s _ $(md5sum _ | awk "{print \$1}") || :'

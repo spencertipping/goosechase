@@ -1,5 +1,5 @@
 #!/bin/bash
-each ./build-sample _ <<EOF
+each build-sample _ <<EOF
 c
 h
 js

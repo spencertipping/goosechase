@@ -813,18 +813,19 @@ __c52308d05ebb4ff61c5fc36e6d9c7a8a
 meta::message_color('state', 'purple');
 meta::message_color('states', 'yellow');
 meta::message_color('watch', 'blue');
-meta::note('queue', <<'__ecee5d73a874531bb8a368b4e942b334');
+meta::note('queue', <<'__226dc433af3bc4b56370bc848fbe2a7a');
 Grammar derivation details.
 Deriving grammars is probably not easy. My inclination is to go with an informal, ad-hoc algorithm based heavily on randomness. It doesn't have to build correct grammars, just grammars that
-are somewhat better than none (enough to boost typing speed).
+are somewhat better than none.
 
 Important points of these grammars are:
 
 | 1. Reducing the overhead of manipulating nested structures.
   2. Eliminating the need to type out boilerplate.
   3. Predictive information density; given that we've typed X, what is the expected information content of the next character?
-  4. Linearizing tree-oriented edits.
-__ecee5d73a874531bb8a368b4e942b334
+  4. Parsing arbitrary valid source and identifying high- and low-information regions.
+  5. Taking an ambiguous edit hint and constructing the most probable interpretation.
+__226dc433af3bc4b56370bc848fbe2a7a
 meta::parent('/home/spencertipping/bin/notes', <<'__320d51928ec8e2e370d67d30abe059b5');
 function::note
 meta::type::note

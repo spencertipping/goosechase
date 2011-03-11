@@ -402,6 +402,7 @@ meta::function('note', <<'__bcbfeac6dd2112f47296265444570a6e');
 # Creates a note with a given name, useful for jotting things down.
 create("note::$_[0]");
 __bcbfeac6dd2112f47296265444570a6e
+meta::function('notes', 'ls(\'-a\', \'^note::\');');
 meta::function('parents', 'join "\\n", grep s/^parent:://o, sort keys %data;');
 meta::function('perl', <<'__986a274c013b77fe08d29726ce3799fe');
 my $result = eval(join ' ', @_);
@@ -825,11 +826,12 @@ Notes.
 [1] I claim that parsing and compression are dual expressions of the same problem in practice. Given an infinite amount of code, whatever structure exists across all samples can be assumed to
     reflect either (1) enforced structure, or (2) features of the language that might as well not exist.
 __80273c1948c4ae8335112c2332fbecac
-meta::parent('/home/spencertipping/bin/notes', <<'__320d51928ec8e2e370d67d30abe059b5');
+meta::parent('/home/spencertipping/bin/notes', <<'__885245820bcb60424dfcbd480e5b966e');
 function::note
+function::notes
 meta::type::note
 parent::object
-__320d51928ec8e2e370d67d30abe059b5
+__885245820bcb60424dfcbd480e5b966e
 meta::parent('/home/spencertipping/bin/queue', <<'__e0ba19b429ee7a036ce2cb058ca97bb0');
 function::import-bundle
 function::ls-a

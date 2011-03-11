@@ -813,7 +813,7 @@ __c52308d05ebb4ff61c5fc36e6d9c7a8a
 meta::message_color('state', 'purple');
 meta::message_color('states', 'yellow');
 meta::message_color('watch', 'blue');
-meta::note('queue', <<'__9d4dde9b9272c40cd0875c579d4810ac');
+meta::note('queue', <<'__60dfb64f14a47edf08dd333141e7dbf4');
 Grammar derivation details.
 Deriving grammars is probably not easy. My inclination is to go with an informal, ad-hoc algorithm based heavily on randomness. It doesn't have to build correct grammars, just grammars that
 are somewhat better than none.
@@ -829,7 +829,23 @@ Important points of these grammars are:
 Compression strategies.
 How do we evaluate information density? There's more to it than counting ordered disjunctions for two reasons. First, ordered disjunctions can be rearranged to optimize compressability (to a
 point); and second, they can be heavily biased depending on selection frequency.
-__9d4dde9b9272c40cd0875c579d4810ac
+
+Grammar structure.
+Obviously a full CFG or PEG is a bit too powerful, since these each permit configurations with infinite recursion. Ideally we have some kind of grammar that is (1) configurable to accept the
+input in question, and (2) guaranteed to halt on all inputs. It doesn't have to be unambiguous; the reason is that we can use a greedy-ish algorithm to parse, and accept that any ambiguity
+will be resolved in a stable way. (In fact, some ambiguity might be beneficial to prevent hyperspecialization.)
+
+Information inside a decision.
+Given a choice with N alternatives and probability vector <p1, p2, ..., pN>, what is the expected amount of information required to encode each decision? It isn't log N; this is the worst
+case, where all pi's are equal. If there is bias, then we can encode the information in less space. Specifically, given many decisions, we can arithmetic-code the sequence in less space
+(depending on the significance of the biases).
+
+Of course, I don't actually have to write an arithmetic coder. All I need to do is figure out the amount of compression obtained by using a given model [= grammar] on a given input. This
+should be easier.
+
+PPM.
+Is it the case that PPM algorithms provide an edge? Perhaps only for unknown input. But for source code we can make some simplifying assumptions.
+__60dfb64f14a47edf08dd333141e7dbf4
 meta::parent('/home/spencertipping/bin/notes', <<'__320d51928ec8e2e370d67d30abe059b5');
 function::note
 meta::type::note

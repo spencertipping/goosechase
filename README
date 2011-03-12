@@ -1,0 +1,28 @@
+Grammar derivation via empirical modeling | Spencer Tipping
+Licensed under the terms of the MIT source code license
+
+This project is a wild goose chase to write an editor that has some level of
+understanding about a language, but without writing any language-specific code.
+The idea is that it should be possible to construct a real-world grammar [1]
+based on lots of code samples in a given language. Rather than doing anything
+particularly formal or elegant, my current plan is to generate random grammars
+and use a combination of simulated annealing and genetic algorithms to find the
+ones that represent the language best.
+
+What qualifies as representing a language well? I make the assumption that the
+most accurate grammar will both (1) be compact, and (2) result in compact
+representations of the strings it encodes. In other words, the grammar should
+absorb the structure, or repetition, in the input, so that the decisions that
+represent the parse tree have high entropy. [2]
+
+Notes.
+[1] A real-world grammar doesn't have to fully constrain the input and can
+    cross over into the semantic domain. The advantage of sampling real code is
+    that we can make a simplifying assumption that code that is never written
+    should never be written -- thus allowing for deficiencies within the
+    language design itself.
+
+[2] An important point here is predictive analysis. The entropy of a binary
+    decision each of whose outcomes is equally likely is higher than a highly
+    biased binary decision. I'm not 100% sure, but I think this detail will
+    play a large role in the design of the resulting grammars.

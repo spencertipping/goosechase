@@ -661,7 +661,7 @@ my $hash = fast_hash(fast_hash(scalar @keys) . join '|', @keys);
 $hash = fast_hash("$data{$_}|$hash") for @keys;
 $hash;
 __119111f84c3e32a5536838ac84bc6f10
-meta::function('test01', 'run(\'simple-markov-test-data/\' . ($_[0] // \'01\'));');
+meta::function('test', 'run(\'simple-markov-test-data/\' . ($_[0] // \'rb\') . ($_[1] // \'\'));');
 meta::function('touch', 'associate($_, \'\') for @_;');
 meta::function('unlock', 'chmod_self(sub {$_[0] | 0200});');
 meta::function('update', '&{\'update-from\'}(@_, grep s/^parent:://o, sort keys %data);');
@@ -1132,7 +1132,7 @@ meta::retriever('sdocp', <<'__fef74cd94fa8761618662802f0bfc171');
 my $attribute = attribute($_[0]);
 exists $data{"sdoc::$attribute"} ? sdocp("sdoc::$attribute") : undef;
 __fef74cd94fa8761618662802f0bfc171
-meta::sdoc('js::main', <<'__9ad21475842261a927458662529f8be8');
+meta::sdoc('js::main', <<'__c2a475c239b89055d3a13e0eea255f4a');
 Simple Markov chain generator | Spencer Tipping
 Licensed under the terms of the MIT source code license
 
@@ -1142,14 +1142,11 @@ This is a dumb fixed-context Markov implementation designed to experiment with t
 caterwaul.clone('std seq continuation')(function (require) {
   seq[(1 >>>[_ + 1] <<[_ < 20]) *![console.log('Order #{_}\n%s\n', random_string(_, 4000).replace(/\s+/g, ' ').replace(/\n/g, ' '))]],
   where*[text             = require('fs').readFileSync(process.argv[2], 'utf8'),
-         models           = [],
-
-         model_for(n)     = models[n] || (models[n] = l*[tables = {}, entry(prefix, c) = (tables[prefix] = tables[prefix] || {}) /se[_[c] = (_[c] || 0) + 1]] in
-                                                      tables /se[seq[(n >>>[_ + 1] <<[_ < text.length]) *![entry(text.substr(_ - n, n), text.charAt(_))]]]),
-                                                             ///se[n > 1 && l*[next_model = model_for(n - 1)] in caterwaul.util.merge(_, next_model)]),
+         model_for(n)     = l*[tables = {}, entry(prefix, c) = (tables[prefix] = tables[prefix] || []) /se[_[c.charCodeAt(0)] = (_[c.charCodeAt(0)] || 0) + 1]] in
+                            tables /se[seq[(n >>>[_ + 1] <<[_ < text.length]) *![entry(text.substr(_ - n, n), text.charAt(_))]]],
 
          choose_one(hash) = l*[pairs = seq[sp[hash]], total_value = seq[pairs *[_[1]] /[_ + _0]], n = Math.random() * total_value, current = 0] in
-                            seq[pairs |[(current += _[1]) >= n && _[0]]],
+                            seq[pairs |[(current += _[1]) >= n && String.fromCharCode(_[0])]],
 
          most_specific(m, window) = m[window] || unwind['Failed lookup for #{window}'], // || window.length > 1 && m[window.substr(1)],
 
@@ -1157,7 +1154,7 @@ caterwaul.clone('std seq continuation')(function (require) {
                             seq[(0 >>>[_ + 1] <<[_ <= n]) *[l*[next = choose_one(most_specific(model, window))] in next /se[window = window.substr(1) + next]]].join(''),
 
          random_string(order, n) = l[model = model_for(order)] in choose(n, model)]})(require);
-__9ad21475842261a927458662529f8be8
+__c2a475c239b89055d3a13e0eea255f4a
 internal::main();
 
 __END__

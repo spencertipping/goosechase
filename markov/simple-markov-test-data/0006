@@ -1,3 +1,0 @@
-require 'openssl/net/telnets'
-
-create_makefile('objspace')

@@ -1191,7 +1191,7 @@ meta::retriever('sdocp', <<'__fef74cd94fa8761618662802f0bfc171');
 my $attribute = attribute($_[0]);
 exists $data{"sdoc::$attribute"} ? sdocp("sdoc::$attribute") : undef;
 __fef74cd94fa8761618662802f0bfc171
-meta::sdoc('lisp::main', <<'__d1ceda1c6cb500d63079419964eca5a3');
+meta::sdoc('lisp::main', <<'__9bf1873113d365a45958cc1ea1b36a20');
 Simple grammar derivation | Spencer Tipping
 Licensed under the terms of the MIT source code license
 
@@ -1210,8 +1210,9 @@ The grammar will not only specify productions that can encode the input, but it 
 is that more accurate predictions are considered to be more useful.
 
 There's another challenge associated with this, and that's constructing a bijection between the prediction-space and uncompressed text. In a way that's exactly what the grammar does, but to
-take weights into account involves some kind of probability-sensitive encoding such as arithmetic or Huffman coding.
-__d1ceda1c6cb500d63079419964eca5a3
+take weights into account involves some kind of probability-sensitive encoding such as arithmetic or Huffman coding. In practice the details don't matter; we can assume some optimal encoding
+of the model.
+__9bf1873113d365a45958cc1ea1b36a20
 meta::template('comment', '\'\';     # A mechanism for line or block comments.');
 meta::template('eval', <<'__eb0b1058649eb2d833f348540516b358');
 my $result = eval $_[0];

@@ -347,16 +347,18 @@ for (keys %dependencies) {
   terminal::info("Retrieving $dependencies{$_} as $_");
   associate("cached_dependency::$_", LWP::Simple::get($dependencies{$_}))}
 __0dea14d6eee0043b3664098a1613144e
-meta::function('edit', <<'__c74a5d1c0dbd922acaf1397f89190fce');
+meta::function('edit', <<'__d4a523db46b488b20f444e07d28fea33');
 my ($name, %options) = @_;
 my $extension = extension_for($name);
 
-die "Attribute $name does not exist." unless exists $data{$name};
+die "Attribute $name does not exist" unless exists $data{$name};
+die "$name is inherited; use 'edit $name -f' to edit anyway" unless is($name, '-u') || exists $options{'-f'};
+
 associate($name, invoke_editor_on($data{$name} || "# Attribute $name", %options, attribute => $name, extension => $extension),
           execute => $name !~ /^bootstrap::/);
 save();
 '';
-__c74a5d1c0dbd922acaf1397f89190fce
+__d4a523db46b488b20f444e07d28fea33
 meta::function('enable', 'chmod_self(sub {$_[0] | $_[0] >> 2});');
 meta::function('export', <<'__388e0cc60507443cb1c0cc3e2658cfef');
 # Exports data into a text file.
@@ -399,6 +401,11 @@ my $name = pop @_;
 associate($name, @_ ? join('', map(file::read($_), @_)) : join('', <STDIN>)); 
 __ac86cbe9c9fb12fc8cef2cc88e80c01e
 meta::function('initial-state', '$transient{initial};');
+meta::function('is', <<'__5d4fddb72b0715694b83aa0c925a8d04');
+my ($attribute, @criteria) = @_;
+my ($options, @stuff) = separate_options(@criteria);
+grep $_ eq $attribute, select_keys(%$options);
+__5d4fddb72b0715694b83aa0c925a8d04
 meta::function('load-state', <<'__0bddb2edf7d13e60bf47e7bce8c8c011');
 my ($state_name) = @_;
 my $state = retrieve("state::$state_name");
@@ -958,7 +965,7 @@ function::clisp
 meta::type::lisp
 parent::/home/spencertipping/bin/development
 __1b8c4537e6a8fbe556ef34496cae6f9b
-meta::parent('/home/spencertipping/bin/object', <<'__198daf3f2d9bdd5cc38c7dd8533310f4');
+meta::parent('/home/spencertipping/bin/object', <<'__06a7f6db3f4a0fb3df149238368bb8b7');
 bootstrap::initialization
 bootstrap::perldoc
 function::alias
@@ -978,6 +985,7 @@ function::grep
 function::hash
 function::import
 function::initial-state
+function::is
 function::load-state
 function::lock
 function::ls
@@ -1048,7 +1056,7 @@ meta::type::retriever
 meta::type::state
 retriever::file
 retriever::id
-__198daf3f2d9bdd5cc38c7dd8533310f4
+__06a7f6db3f4a0fb3df149238368bb8b7
 meta::parent('configuration', <<'__511208c99d8bc2caa3067db9f1824163');
 meta::type::configuration
 parent::/home/spencertipping/bin/object
@@ -1059,7 +1067,7 @@ function::notes
 meta::type::note
 parent::object
 __885245820bcb60424dfcbd480e5b966e
-meta::parent('object', <<'__198daf3f2d9bdd5cc38c7dd8533310f4');
+meta::parent('object', <<'__06a7f6db3f4a0fb3df149238368bb8b7');
 bootstrap::initialization
 bootstrap::perldoc
 function::alias
@@ -1079,6 +1087,7 @@ function::grep
 function::hash
 function::import
 function::initial-state
+function::is
 function::load-state
 function::lock
 function::ls
@@ -1149,7 +1158,7 @@ meta::type::retriever
 meta::type::state
 retriever::file
 retriever::id
-__198daf3f2d9bdd5cc38c7dd8533310f4
+__06a7f6db3f4a0fb3df149238368bb8b7
 meta::parent('preprocessor', <<'__096673520f3131b7654ae23941e9012f');
 function::preprocess
 meta::type::template

@@ -1,0 +1,2 @@
+#!/bin/bash
+cat ../empirical/rb/$1* > simple-markov-test-data/$1

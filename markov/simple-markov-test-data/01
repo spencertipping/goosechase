@@ -1,0 +1,5762 @@
+shared_examples_for "version checking" do |options|
+  library = described_class.library_name
+
+  describe '.check_version!', :disable_warnings => true do
+    options[:valid].each do |version|
+      it "does nothing when #{library}'s version is #{version}" do
+        stub_version(version)
+        described_class.should_not_receive(:warn)
+        expect { described_class.check_version! }.to_not raise_error
+      end
+    end
+
+    options[:too_low].each do |version|
+      it "raises an error when #{library}'s version is #{version}" do
+        stub_version(version)
+        described_class.should_not_receive(:warn)
+        expect { described_class.check_version! }.to raise_error(/You are using #{library} #{version}.  VCR requires version/)
+      end
+    end
+
+    options[:too_high].each do |version|
+      it "does nothing when #{library}'s version is #{version}" do
+        stub_version(version)
+        described_class.should_receive(:warn).with(/VCR is known to work with #{library}/)
+        expect { described_class.check_version! }.to_not raise_error
+      end
+    end
+  end
+end
+JAVA_LIBS = {}
+
+unless RUBY_VERSION == '1.8.6'
+  # When we're building native windows gems with 1.8.6 this block of code fails.
+  # We'll just disable running it - it's not needed at that stage of the build.
+  
+  require 'rexml/document'
+  pom = REXML::Document.new(IO.read(File.dirname(__FILE__) + '/../../java/pom.xml'))
+  pom_version = REXML::XPath.first(pom, '//xmlns:project/xmlns:version/text()').to_s
+  REXML::XPath.each(pom, '//xmlns:project/xmlns:dependencies/xmlns:dependency').each do |dep|
+    groupId = dep.get_elements('groupId')[0].text()
+    artifactId = dep.get_elements('artifactId')[0].text()
+    version = dep.get_elements('version')[0].text()
+    scope = dep.get_elements('scope')[0].text() rescue nil
+
+    jar = "~/.m2/repository/#{groupId.gsub(/\./, '/')}/#{artifactId}/#{version}/#{artifactId}-#{version}.jar"
+    JAVA_LIBS["#{groupId}-#{artifactId}"] = jar if scope != 'test'
+    require jar if defined?(JRUBY_VERSION)
+  end
+endrequire 'mspec/guards/guard'
+
+class CompliantOnGuard < SpecGuard
+  def match?
+    if @args.include? :ruby
+      raise Exception, "improper use of compliant_on guard"
+    end
+    standard? or implementation?(*@args)
+  end
+end
+
+class NotCompliantOnGuard < SpecGuard
+  def match?
+    if @args.include? :ruby
+      raise Exception, "improper use of not_compliant_on guard"
+    end
+    standard? or !implementation?(*@args)
+  end
+end
+
+class Object
+  def compliant_on(*args)
+    g = CompliantOnGuard.new(*args)
+    g.name = :compliant_on
+    yield if g.yield?
+  ensure
+    g.unregister
+  end
+
+  def not_compliant_on(*args)
+    g = NotCompliantOnGuard.new(*args)
+    g.name = :not_compliant_on
+    yield if g.yield?
+  ensure
+    g.unregister
+  end
+end
+require File.expand_path('../../../../../spec_helper', __FILE__)
+require 'net/http'
+
+describe "Net::HTTP.Proxy" do
+  it "returns a new subclass of Net::HTTP" do
+    Net::HTTP.Proxy("localhost").should < Net::HTTP
+  end
+  
+  it "returns Net::HTTP when the passed address is nil" do
+    Net::HTTP.Proxy(nil).should == Net::HTTP
+  end
+  
+  it "sets the returned subclasses' proxy options based on the passed arguments" do
+    http_with_proxy = Net::HTTP.Proxy("localhost", 1234, "rspec", "rocks")
+    http_with_proxy.proxy_address.should == "localhost"
+    http_with_proxy.proxy_port.should eql(1234)
+    http_with_proxy.proxy_user.should == "rspec"
+    http_with_proxy.proxy_pass.should == "rocks"
+  end
+end
+
+describe "Net::HTTP#proxy?" do
+  describe "when self is no proxy class instance" do
+    it "returns false" do
+      Net::HTTP.new("localhost", 3333).proxy?.should be_false
+    end
+  end
+
+  describe "when self is a proxy class instance" do
+    it "returns false" do
+      http_with_proxy = Net::HTTP.Proxy("localhost", 1234, "rspec", "rocks")
+      http_with_proxy.new("localhost", 3333).proxy?.should be_true
+    end
+  end
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+
+describe "Float#>=" do
+  it "returns true if self is greater than or equal to other" do
+    (5.2 >= 5.2).should == true
+    (9.71 >= 1).should == true
+    (5.55382 >= 0xfabdafbafcab).should == false
+  end
+end
+module BreakSpecs
+  class Driver
+    def initialize(ensures=false)
+      @ensures = ensures
+    end
+
+    def note(value)
+      ScratchPad << value
+    end
+  end
+
+  class Block < Driver
+    def break_nil
+      note :a
+      note yielding {
+        note :b
+        break
+        note :c
+      }
+      note :d
+    end
+
+    def break_value
+      note :a
+      note yielding {
+        note :b
+        break :break
+        note :c
+      }
+      note :d
+    end
+
+    def yielding
+      note :aa
+      note yield
+      note :bb
+    end
+
+    def create_block
+      note :za
+      b = capture_block do
+        note :zb
+        break :break
+        note :zc
+      end
+      note :zd
+      b
+    end
+
+    def capture_block(&b)
+      note :xa
+      b
+    end
+
+    def break_in_method_captured
+      note :a
+      create_block.call
+      note :b
+    end
+
+    def break_in_yield_captured
+      note :a
+      yielding(&create_block)
+      note :b
+    end
+
+    def break_in_method
+      note :a
+      b = capture_block {
+        note :b
+        break :break
+        note :c
+      }
+      note :d
+      note b.call
+      note :e
+    end
+
+    def call_method(b)
+      note :aa
+      note b.call
+      note :bb
+    end
+
+    def break_in_nested_method
+      note :a
+      b = capture_block {
+        note :b
+        break :break
+        note :c
+      }
+      note :c
+      call_method(b)
+      note :d
+    end
+
+    def break_in_yielding_method
+      note :a
+      b = capture_block {
+        note :b
+        break :break
+        note :c
+      }
+      note :c
+      yielding(&b)
+      note :d
+    end
+  end
+
+  class Lambda < Driver
+    # Cases for the invocation of the scope defining the lambda still active
+    # on the call stack when the lambda is invoked.
+    def break_in_defining_scope(value=true)
+      note :a
+      note lambda {
+        note :b
+        if value
+          break :break
+        else
+          break
+        end
+        note :c
+      }.call
+      note :d
+    end
+
+    def break_in_nested_scope
+      note :a
+      l = lambda do
+        note :b
+        break :break
+        note :c
+      end
+      note :d
+
+      invoke_lambda l
+
+      note :e
+    end
+
+    def invoke_lambda(l)
+      note :aa
+      note l.call
+      note :bb
+    end
+
+    def break_in_nested_scope_yield
+      note :a
+      l = lambda do
+        note :b
+        break :break
+        note :c
+      end
+      note :d
+
+      note_invoke_yield(&l)
+
+      note :e
+    end
+
+    def note_invoke_yield
+      note :aa
+      note yield
+      note :bb
+    end
+
+    def break_in_nested_scope_block
+      note :a
+      l = lambda do
+        note :b
+        break :break
+        note :c
+      end
+      note :d
+
+      invoke_lambda_block l
+
+      note :e
+    end
+
+    def invoke_yield
+      note :aaa
+      yield
+      note :bbb
+    end
+
+    def invoke_lambda_block(b)
+      note :aa
+      invoke_yield do
+        note :bb
+
+        note b.call
+
+        note :cc
+      end
+      note :dd
+    end
+
+    # Cases for the invocation of the scope defining the lambda NOT still
+    # active on the call stack when the lambda is invoked.
+    def create_lambda
+      note :la
+      l = lambda do
+        note :lb
+        break :break
+        note :lc
+      end
+      note :ld
+      l
+    end
+
+    def break_in_method
+      note :a
+
+      note create_lambda.call
+
+      note :b
+    end
+
+    def break_in_block_in_method
+      note :a
+      invoke_yield do
+        note :b
+
+        note create_lambda.call
+
+        note :c
+      end
+      note :d
+    end
+
+    def break_in_method_yield
+      note :a
+
+      invoke_yield(&create_lambda)
+
+      note :b
+    end
+  end
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+
+describe "ARGF.lineno" do
+  before :each do
+    @file1 = fixture __FILE__, "file1.txt"
+    @file2 = fixture __FILE__, "file2.txt"
+  end
+
+  after :each do
+    ARGF.close unless ARGF.closed?
+  end
+
+  # NOTE: this test assumes that fixtures files have two lines each
+  # TODO: break this into four specs
+  it "returns the current line number on each file" do
+    argv [@file1, @file2, @file1, @file2] do
+      ARGF.lineno = 0
+      ARGF.gets
+      ARGF.lineno.should == 1
+      ARGF.gets
+      ARGF.lineno.should == 2
+      ARGF.gets
+      ARGF.lineno.should == 3
+      ARGF.gets
+      ARGF.lineno.should == 4
+    end
+  end
+
+  ruby_bug "#1693", "1.8" do
+    it "resets to 0 after the stream is rewound" do
+      argv [@file1, @file2, @file1, @file2] do
+        ARGF.lineno = 0
+        ARGF.lineno.should == 0
+        ARGF.readline
+        ARGF.rewind
+        ARGF.lineno.should == 0
+      end
+    end
+  end
+
+  it "aliases to $." do
+    argv [@file1, @file2, @file1, @file2] do
+      ARGF.gets
+      $..should == 1
+      ARGF.gets
+      $..should == 2
+      ARGF.gets
+      $..should == 3
+      ARGF.gets
+      $..should == 4
+    end
+  end
+end
+# radio3.rb
+#
+# This demonstration script creates a toplevel window containing
+# several radiobutton widgets.
+#
+# radiobutton widget demo (called by 'widget')
+#
+
+# toplevel widget
+if defined?($radio3_demo) && $radio3_demo
+  $radio3_demo.destroy
+  $radio3_demo = nil
+end
+
+# demo toplevel widget
+$radio3_demo = TkToplevel.new {|w|
+  title("Radiobutton Demonstration 3")
+  iconname("radio3")
+  positionWindow(w)
+}
+
+base_frame = TkFrame.new($radio3_demo).pack(:fill=>:both, :expand=>true)
+
+# label
+msg = TkLabel.new(base_frame) {
+  font $font
+  wraplength '5i'
+  justify 'left'
+  text "Three groups of radiobuttons are displayed below.  If you click on a button then the button will become selected exclusively among all the buttons in its group.  A Tcl variable is associated with each group to indicate which of the group's buttons is selected.  When the 'Tristate' button is pressed, the radio buttons will display the tri-state mode. Selecting any radio button will return the buttons to their respective on/off state. Click the \"See Variables\" button to see the current values of the variables."
+}
+msg.grid(:row=>0, :column=>0, :columnspan=>3, :sticky=>'nsew')
+
+# variable
+size = TkVariable.new
+color = TkVariable.new
+align = TkVariable.new
+
+# frame
+TkFrame.new(base_frame) {|frame|
+  TkGrid(TkFrame.new(frame, :height=>2, :relief=>:sunken, :bd=>2),
+         :columnspan=>4, :row=>0, :sticky=>'ew', :pady=>2)
+  TkGrid('x',
+         TkButton.new(frame, :text=>'See Variables',
+                      :image=>$image['view'], :compound=>:left,
+                      :command=>proc{
+                        showVars(base_frame, ['size', size],
+                                 ['color', color], ['compound', align])
+                      }),
+         TkButton.new(frame, :text=>'See Code',
+                      :image=>$image['view'], :compound=>:left,
+                      :command=>proc{showCode 'radio3'}),
+         TkButton.new(frame, :text=>'Dismiss',
+                      :image=>$image['delete'], :compound=>:left,
+                      :command=>proc{
+                        tmppath = $radio3_demo
+                        $radio3_demo = nil
+                        $showVarsWin[tmppath.path] = nil
+                        tmppath.destroy
+                      }),
+         :padx=>4, :pady=>4)
+  frame.grid_columnconfigure(0, :weight=>1)
+  TkGrid(frame, :row=>3, :column=>0, :columnspan=>3, :sticky=>'nsew')
+}
+
+# frame
+f_left  = TkLabelFrame.new(base_frame, 'text'=>'Point Size',
+                           'pady'=>2, 'padx'=>2)
+f_mid   = TkLabelFrame.new(base_frame, 'text'=>'Color',
+                           'pady'=>2, 'padx'=>2)
+f_right = TkLabelFrame.new(base_frame, 'text'=>'Alignment',
+                           'pady'=>2, 'padx'=>2)
+f_left .grid('column'=>0, 'row'=>1, 'pady'=>'.5c', 'padx'=>'.5c', 'rowspan'=>2)
+f_mid  .grid('column'=>1, 'row'=>1, 'pady'=>'.5c', 'padx'=>'.5c', 'rowspan'=>2)
+f_right.grid('column'=>2, 'row'=>1, 'pady'=>'.5c', 'padx'=>'.5c')
+
+TkButton.new(base_frame, 'text'=>'Tristate',
+             'command'=>proc{size.value = 'multi'; color.value = 'multi'}){
+  grid('column'=>2, 'row'=>2, 'pady'=>'.5c', 'padx'=>'.5c')
+}
+
+# radiobutton
+[10, 12, 14, 18, 24].each {|sz|
+  TkRadioButton.new(f_left) {
+    text "Point Size #{sz}"
+    variable size
+    relief 'flat'
+    value sz
+    tristatevalue 'multi'
+  }.pack('side'=>'top', 'pady'=>2, 'anchor'=>'w', 'fill'=>'x')
+}
+
+['Red', 'Green', 'Blue', 'Yellow', 'Orange', 'Purple'].each {|col|
+  TkRadioButton.new(f_mid) {
+    text col
+    variable color
+    relief 'flat'
+    value col.downcase
+    anchor 'w'
+    tristatevalue 'multi'
+    command proc{f_mid.fg(color.value)}
+  }.pack('side'=>'top', 'pady'=>2, 'fill'=>'x')
+}
+
+# label = TkLabel.new(f_right, 'text'=>'Label', 'bitmap'=>'questhead',
+label = Tk::Label.new(f_right, 'text'=>'Label', 'bitmap'=>'questhead',
+                    'compound'=>'left')
+label.configure('width'=>TkWinfo.reqwidth(label), 'compound'=>'top')
+label.height(TkWinfo.reqheight(label))
+a_btn = ['Top', 'Left', 'Right', 'Bottom'].collect{|a|
+  TkRadioButton.new(f_right, 'text'=>a, 'variable'=>align, 'relief'=>'flat',
+                    'value'=>a.downcase, 'indicatoron'=>0, 'width'=>7,
+                    'command'=>proc{label.compound(align.value)})
+}
+
+Tk.grid('x', a_btn[0])
+Tk.grid(a_btn[1], label, a_btn[2])
+Tk.grid('x', a_btn[3])
+#!/usr/bin/env ruby
+#
+#  menubutton sample : based on sample menubuttons on the Tcl/Tk demo script
+#
+require 'tk'
+
+TkLabel.new(:text=>'Sample of TkMenubutton').pack(:side=>:top)
+
+TkFrame.new{|f|
+  pack(:side=>:top) 
+
+
+  TkMenubutton.new(:parent=>f, :text=>'Right', :underline=>0, 
+                   :direction=>:right, :relief=>:raised){|mb|
+    menu TkMenu.new(:parent=>mb, :tearoff=>0){
+      add(:command, :label=>'Right menu: first item', 
+                    :command=>proc{print 'You have selected the first item' + 
+                                         " from the Right menu.\n"})
+      add(:command, :label=>'Right menu: second item', 
+                    :command=>proc{print 'You have selected the second item' + 
+                                         " from the Right menu.\n"})
+    }
+    pack(:side=>:left, :padx=>25, :pady=>25)
+  }
+
+  TkMenubutton.new(:parent=>f, :text=>'Below', :underline=>0, 
+                   :direction=>:below, :relief=>:raised){|mb|
+    menu(TkMenu.new(:parent=>mb, :tearoff=>0){
+      add(:command, :label=>'Below menu: first item', 
+                    :command=>proc{print 'You have selected the first item' + 
+                                         " from the Below menu.\n"})
+      add(:command, :label=>'Below menu: second item', 
+                    :command=>proc{print 'You have selected the second item' + 
+                                         " from the Below menu.\n"})
+    })
+    pack(:side=>:left, :padx=>25, :pady=>25)
+  }
+
+  TkMenubutton.new(:parent=>f, :text=>'Above', :underline=>0, 
+                   :direction=>:above, :relief=>:raised){|mb|
+    menu TkMenu.new(:parent=>mb, :tearoff=>0){
+      add(:command, :label=>'Above menu: first item', 
+                    :command=>proc{print 'You have selected the first item' + 
+                                         " from the Above menu.\n"})
+      add(:command, :label=>'Above menu: second item', 
+                    :command=>proc{print 'You have selected the second item' + 
+                                         " from the Above menu.\n"})
+    }
+    pack(:side=>:left, :padx=>25, :pady=>25)
+  }
+
+  TkMenubutton.new(:parent=>f, :text=>'Left', :underline=>0, 
+                   :direction=>:left, :relief=>:raised){|mb|
+    menu(TkMenu.new(:parent=>mb, :tearoff=>0){
+      add(:command, :label=>'Left menu: first item', 
+                    :command=>proc{print 'You have selected the first item' + 
+                                         " from the Left menu.\n"})
+      add(:command, :label=>'Left menu: second item', 
+                    :command=>proc{print 'You have selected the second item' + 
+                                         " from the Left menu.\n"})
+    })
+    pack(:side=>:left, :padx=>25, :pady=>25)
+  }
+}
+
+############################
+TkFrame.new(:borderwidth=>2, :relief=>:sunken, 
+            :height=>5).pack(:side=>:top, :fill=>:x, :padx=>20)
+############################
+
+TkLabel.new(:text=>'Sample of TkOptionMenu').pack(:side=>:top)
+
+colors = %w(Black red4 DarkGreen NavyBlue gray75 Red Green Blue gray50 
+            Yellow Cyan Magenta White Brown DarkSeaGreen DarkViolet)
+
+TkFrame.new{|f|
+  pack(:side=>:top) 
+
+  b1 = TkOptionMenubutton . 
+    new(:parent=>f, :values=>%w(one two three)) . 
+    pack(:side=>:left, :padx=>25, :pady=>25)
+
+  b2 = TkOptionMenubutton.new(:parent=>f, :values=>colors) {|optMB|
+    colors.each{|color|
+      no_sel = TkPhotoImage.new(:height=>16, :width=>16){
+        put 'gray50', *[ 0,  0, 16,  1]
+        put 'gray50', *[ 0,  1,  1, 16]
+        put 'gray75', *[ 0, 15, 16, 16]
+        put 'gray75', *[15,  1, 16, 16]
+        put color,    *[ 1,  1, 15, 15]
+      }
+      sel = TkPhotoImage.new(:height=>16, :width=>16){
+        put 'Black',  *[ 0,  0, 16,  2]
+        put 'Black',  *[ 0,  2,  2, 16]
+        put 'Black',  *[ 2, 14, 16, 16]
+        put 'Black',  *[14,  2, 16, 14]
+        put color,    *[ 2,  2, 14, 14]
+      }
+      optMB.entryconfigure(color, :hidemargin=>1, 
+                           :image=>no_sel, :selectimage=>sel)
+    }
+    optMB.menuconfigure(:tearoff, 1)
+    %w(Black gray75 gray50 White).each{|color|
+      optMB.entryconfigure(color, :columnbreak=>true)
+    }
+    pack(:side=>:left, :padx=>25, :pady=>25)
+  }
+
+  TkButton.new(:parent=>f){
+    text 'show values'
+    command proc{p [b1.value, b2.value]}
+    pack(:side=>:left, :padx=>25, :pady=>5, :anchor=>:s)
+  }
+}
+
+############################
+TkFrame.new(:borderwidth=>2, :relief=>:sunken, 
+            :height=>5).pack(:side=>:top, :fill=>:x, :padx=>20)
+############################
+
+root = TkRoot.new(:title=>'menubutton samples')
+
+TkButton.new(root, :text=>'exit', :command=>proc{exit}){
+  pack(:side=>:top, :padx=>25, :pady=>5, :anchor=>:e)
+}
+
+# VirtualEvent <<MenuSelect>> on Tcl/Tk ==> '<MenuSelect>' on Ruby/Tk
+# ( remove the most external <, > for Ruby/Tk notation )
+TkMenu.bind('<MenuSelect>', proc{|widget|
+              p widget.entrycget('active', :label)
+            }, '%W')
+
+############################
+
+Tk.mainloop
+require "active_support/core_ext/module/remove_method"
+
+class Module
+  # Provides a delegate class method to easily expose contained objects' methods
+  # as your own. Pass one or more methods (specified as symbols or strings)
+  # and the name of the target object via the <tt>:to</tt> option (also a symbol
+  # or string). At least one method and the <tt>:to</tt> option are required.
+  #
+  # Delegation is particularly useful with Active Record associations:
+  #
+  #   class Greeter < ActiveRecord::Base
+  #     def hello
+  #       "hello"
+  #     end
+  #
+  #     def goodbye
+  #       "goodbye"
+  #     end
+  #   end
+  #
+  #   class Foo < ActiveRecord::Base
+  #     belongs_to :greeter
+  #     delegate :hello, :to => :greeter
+  #   end
+  #
+  #   Foo.new.hello   # => "hello"
+  #   Foo.new.goodbye # => NoMethodError: undefined method `goodbye' for #<Foo:0x1af30c>
+  #
+  # Multiple delegates to the same target are allowed:
+  #
+  #   class Foo < ActiveRecord::Base
+  #     belongs_to :greeter
+  #     delegate :hello, :goodbye, :to => :greeter
+  #   end
+  #
+  #   Foo.new.goodbye # => "goodbye"
+  #
+  # Methods can be delegated to instance variables, class variables, or constants
+  # by providing them as a symbols:
+  #
+  #   class Foo
+  #     CONSTANT_ARRAY = [0,1,2,3]
+  #     @@class_array  = [4,5,6,7]
+  #
+  #     def initialize
+  #       @instance_array = [8,9,10,11]
+  #     end
+  #     delegate :sum, :to => :CONSTANT_ARRAY
+  #     delegate :min, :to => :@@class_array
+  #     delegate :max, :to => :@instance_array
+  #   end
+  #
+  #   Foo.new.sum # => 6
+  #   Foo.new.min # => 4
+  #   Foo.new.max # => 11
+  #
+  # Delegates can optionally be prefixed using the <tt>:prefix</tt> option. If the value
+  # is <tt>true</tt>, the delegate methods are prefixed with the name of the object being
+  # delegated to.
+  #
+  #   Person = Struct.new(:name, :address)
+  #
+  #   class Invoice < Struct.new(:client)
+  #     delegate :name, :address, :to => :client, :prefix => true
+  #   end
+  #
+  #   john_doe = Person.new("John Doe", "Vimmersvej 13")
+  #   invoice = Invoice.new(john_doe)
+  #   invoice.client_name    # => "John Doe"
+  #   invoice.client_address # => "Vimmersvej 13"
+  #
+  # It is also possible to supply a custom prefix.
+  #
+  #   class Invoice < Struct.new(:client)
+  #     delegate :name, :address, :to => :client, :prefix => :customer
+  #   end
+  #
+  #   invoice = Invoice.new(john_doe)
+  #   invoice.customer_name    # => "John Doe"
+  #   invoice.customer_address # => "Vimmersvej 13"
+  #
+  # If the delegate object is +nil+ an exception is raised, and that happens
+  # no matter whether +nil+ responds to the delegated method. You can get a
+  # +nil+ instead with the +:allow_nil+ option.
+  #
+  #  class Foo
+  #    attr_accessor :bar
+  #    def initialize(bar = nil)
+  #      @bar = bar
+  #    end
+  #    delegate :zoo, :to => :bar
+  #  end
+  #
+  #  Foo.new.zoo   # raises NoMethodError exception (you called nil.zoo)
+  #
+  #  class Foo
+  #    attr_accessor :bar
+  #    def initialize(bar = nil)
+  #      @bar = bar
+  #    end
+  #    delegate :zoo, :to => :bar, :allow_nil => true
+  #  end
+  #
+  #  Foo.new.zoo   # returns nil
+  #
+  def delegate(*methods)
+    options = methods.pop
+    unless options.is_a?(Hash) && to = options[:to]
+      raise ArgumentError, "Delegation needs a target. Supply an options hash with a :to key as the last argument (e.g. delegate :hello, :to => :greeter)."
+    end
+
+    if options[:prefix] == true && options[:to].to_s =~ /^[^a-z_]/
+      raise ArgumentError, "Can only automatically set the delegation prefix when delegating to a method."
+    end
+
+    prefix = options[:prefix] && "#{options[:prefix] == true ? to : options[:prefix]}_" || ''
+
+    file, line = caller.first.split(':', 2)
+    line = line.to_i
+
+    methods.each do |method|
+      on_nil =
+        if options[:allow_nil]
+          'return'
+        else
+          %(raise "#{self}##{prefix}#{method} delegated to #{to}.#{method}, but #{to} is nil: \#{self.inspect}")
+        end
+
+      module_eval(<<-EOS, file, line - 5)
+        if instance_methods(false).map(&:to_s).include?("#{prefix}#{method}")
+          remove_possible_method("#{prefix}#{method}")
+        end
+
+        def #{prefix}#{method}(*args, &block)               # def customer_name(*args, &block)
+          #{to}.__send__(#{method.inspect}, *args, &block)  #   client.__send__(:name, *args, &block)
+        rescue NoMethodError                                # rescue NoMethodError
+          if #{to}.nil?                                     #   if client.nil?
+            #{on_nil}                                       #     return # depends on :allow_nil
+          else                                              #   else
+            raise                                           #     raise
+          end                                               #   end
+        end                                                 # end
+      EOS
+    end
+  end
+end
+# $Id$
+#
+# Author:: Francis Cianfrocca (gmail: blackhedd)
+# Homepage::  http://rubyeventmachine.com
+# Date:: 8 April 2006
+# 
+# See EventMachine and EventMachine::Connection for documentation and
+# usage examples.
+#
+#----------------------------------------------------------------------------
+#
+# Copyright (C) 2006-07 by Francis Cianfrocca. All Rights Reserved.
+# Gmail: blackhedd
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of either: 1) the GNU General Public License
+# as published by the Free Software Foundation; either version 2 of the
+# License, or (at your option) any later version; or 2) Ruby's License.
+# 
+# See the file COPYING for complete licensing information.
+#
+#---------------------------------------------------------------------------
+#
+#
+#
+#
+
+$:.unshift "../lib"
+require 'eventmachine'
+require 'test/unit'
+
+class TestNextTick < Test::Unit::TestCase
+
+  def test_tick_arg
+    pr = proc {EM.stop}
+    EM.run {
+      EM.next_tick pr
+    }
+    assert true
+  end
+
+  def test_tick_block
+    EM.run {
+      EM.next_tick {EM.stop}
+    }
+    assert true
+  end
+
+  # This illustrates the solution to a long-standing problem.
+  # It's now possible to correctly nest calls to EM#run.
+  # See the source code commentary for EM#run for more info.
+  #
+  def test_run_run
+    EM.run {
+      EM.run {
+        EM.next_tick {EM.stop}
+      }
+    }
+  end
+
+  def test_pre_run_queue
+    x = false
+    EM.next_tick { EM.stop; x = true }
+    EM.run { EM.add_timer(0.2) { EM.stop } }
+    assert x
+  end
+
+  def test_cleanup_after_stop
+    x = true
+    EM.run{
+      EM.next_tick{
+        EM.stop
+        EM.next_tick{ x=false }
+      }
+    }
+    EM.run{
+      EM.next_tick{ EM.stop }
+    }
+    assert x
+  end
+
+  # We now support an additional parameter for EM#run.
+  # You can pass two procs to EM#run now. The first is executed as the normal
+  # run block. The second (if given) is scheduled for execution after the
+  # reactor loop completes.
+  # The reason for supporting this is subtle. There has always been an expectation
+  # that EM#run doesn't return until after the reactor loop ends. But now it's
+  # possible to nest calls to EM#run, which means that a nested call WILL
+  # RETURN. In order to write code that will run correctly either way, it's
+  # recommended to put any code which must execute after the reactor completes
+  # in the second parameter.
+  #
+  def test_run_run_2
+    a = proc {EM.stop}
+    b = proc {assert true}
+    EM.run a, b
+  end
+
+
+  # This illustrates that EM#run returns when it's called nested.
+  # This isn't a feature, rather it's something to be wary of when writing code
+  # that must run correctly even if EM#run is called while a reactor is already
+  # running.
+  def test_run_run_3
+    a = []
+    EM.run {
+      EM.run proc {EM.stop}, proc {a << 2}
+      a << 1
+    }
+    assert_equal( [1,2], a )
+  end
+
+
+  def test_schedule_on_reactor_thread
+    x = false
+    EM.run do
+      EM.schedule { x = true }
+      EM.stop
+    end
+    assert x
+  end
+
+  def test_schedule_from_thread
+    x = false
+    EM.run do
+      Thread.new { EM.schedule { x = true } }.join
+      assert !x
+      EM.next_tick { EM.stop }
+    end
+    assert x
+  end
+
+end
+# Add a Rubinius platform to the platforms list.
+cpu = Gem::Platform.local.cpu
+version = Rubinius::VERSION.split('.')[0, 2].join '.'
+Gem.platforms << Gem::Platform.new([cpu, 'rubinius', version])
+
+module Gem
+
+  def self.precompile_install(installer)
+    spec = installer.spec
+    dir = File.join(installer.gem_home, "gems", spec.full_name)
+
+    files = Dir["#{dir}/**/*.rb"]
+
+    if Gem.configuration.really_verbose
+      STDERR.puts "  rbx: Precompiling #{files.size} files..."
+    end
+
+    error = 0
+    files.each do |file|
+      begin
+        Rubinius.compile_file file
+      rescue Rubinius::CompileError, SyntaxError, LoadError
+        error += 1
+      end
+    end
+
+    if Gem.configuration.really_verbose and error > 0
+      STDERR.puts "  rbx: #{error} error(s) precompiling."
+    end
+  end
+
+  @post_install_hooks << method(:precompile_install)
+
+  def self.default_bindir
+    File.join Rubinius::GEMS_PATH, "bin"
+  end
+
+  def self.default_dir
+    File.join Rubinius::GEMS_PATH, Gem::ConfigMap[:ruby_version]
+  end
+
+  def self.default_preinstalled_dir
+    File.join Rubinius::GEMS_PATH, "rubinius", "preinstalled"
+  end
+
+  def self.default_path
+    dirs = [default_dir]
+    # This is the same test rubygems/defaults.rb uses
+    dirs.unshift(Gem.user_dir) if File.exists?(Gem.user_home)
+    dirs
+  end
+
+  def self.default_exec_format
+    exec_format = ConfigMap[:ruby_install_name].sub('rbx', '%s') rescue '%s'
+
+    unless exec_format =~ /%s/ then
+      raise Gem::Exception,
+        "[BUG] invalid exec_format #{exec_format.inspect}, no %s"
+    end
+
+    exec_format
+  end
+end
+
+describe "The for expression" do
+  it "repeats the loop from the beginning with 'retry'" do
+    j = 0
+    for i in 1..5
+      j += i
+
+      retry if i == 3 && j < 7
+    end
+
+    j.should == 21
+  end
+endrequire File.expand_path('../../../../spec_helper', __FILE__)
+
+describe "Process::Sys.setegid" do
+  it "needs to be reviewed for spec completeness"
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+
+describe "Process.fork" do
+  # As of 1.9 Process.respond_to?(:fork) returns false on platforms that do
+  # not implement it.
+  ruby_version_is "1.9" do
+    platform_is :windows do
+      it "is not implemented" do
+        Process.respond_to?(:fork).should be_false
+      end
+    end
+  end
+
+  platform_is_not :windows do
+    not_supported_on :jruby do
+      before :each do
+        @file = tmp('i_exist')
+        rm_r @file
+      end
+
+      after :each do
+        rm_r @file
+      end
+
+      it "is implemented" do
+        Process.respond_to?(:fork).should be_true
+      end
+
+      it "return nil for the child process" do
+        child_id = Process.fork
+        if child_id == nil
+          touch(@file) { |f| f.write 'rubinius' }
+          Process.exit!
+        else
+          Process.waitpid(child_id)
+        end
+        File.exist?(@file).should == true
+      end
+
+      it "runs a block in a child process" do
+        pid = Process.fork {
+          touch(@file) { |f| f.write 'rubinius' }
+          Process.exit!
+        }
+        Process.waitpid(pid)
+        File.exist?(@file).should == true
+      end
+    end
+  end
+end
+require 'active_support/core_ext/big_decimal/conversions'
+
+module ActiveRecord
+  module ConnectionAdapters # :nodoc:
+    module Quoting
+      # Quotes the column value to help prevent
+      # {SQL injection attacks}[http://en.wikipedia.org/wiki/SQL_injection].
+      def quote(value, column = nil)
+        # records are quoted as their primary key
+        return value.quoted_id if value.respond_to?(:quoted_id)
+
+        case value
+          when String, ActiveSupport::Multibyte::Chars
+            value = value.to_s
+            if column && column.type == :binary && column.class.respond_to?(:string_to_binary)
+              "'#{quote_string(column.class.string_to_binary(value))}'" # ' (for ruby-mode)
+            elsif column && [:integer, :float].include?(column.type)
+              value = column.type == :integer ? value.to_i : value.to_f
+              value.to_s
+            else
+              "'#{quote_string(value)}'" # ' (for ruby-mode)
+            end
+          when NilClass                 then "NULL"
+          when TrueClass                then (column && column.type == :integer ? '1' : quoted_true)
+          when FalseClass               then (column && column.type == :integer ? '0' : quoted_false)
+          when Float, Fixnum, Bignum    then value.to_s
+          # BigDecimals need to be output in a non-normalized form and quoted.
+          when BigDecimal               then value.to_s('F')
+          when Symbol                   then "'#{quote_string(value.to_s)}'"
+          else
+            if value.acts_like?(:date) || value.acts_like?(:time)
+              "'#{quoted_date(value)}'"
+            else
+              "'#{quote_string(value.to_yaml)}'"
+            end
+        end
+      end
+
+      # Quotes a string, escaping any ' (single quote) and \ (backslash)
+      # characters.
+      def quote_string(s)
+        s.gsub(/\\/, '\&\&').gsub(/'/, "''") # ' (for ruby-mode)
+      end
+
+      # Quotes the column name. Defaults to no quoting.
+      def quote_column_name(column_name)
+        column_name
+      end
+
+      # Quotes the table name. Defaults to column name quoting.
+      def quote_table_name(table_name)
+        quote_column_name(table_name)
+      end
+
+      def quoted_true
+        "'t'"
+      end
+
+      def quoted_false
+        "'f'"
+      end
+
+      def quoted_date(value)
+        if value.acts_like?(:time)
+          zone_conversion_method = ActiveRecord::Base.default_timezone == :utc ? :getutc : :getlocal
+          value.respond_to?(zone_conversion_method) ? value.send(zone_conversion_method) : value
+        else
+          value
+        end.to_s(:db)
+      end
+    end
+  end
+end
+#!/usr/bin/env ruby
+require 'tk'
+require 'tkextlib/iwidgets'
+
+Tk::Iwidgets::Pushbutton.new(:text=>'Hello',
+                             :command=>proc{puts 'Hello World'},
+                             :defaultring=>true).pack(:padx=>10, :pady=>10)
+
+Tk.mainloop
+class Object
+
+  def initialize
+  end
+  private :initialize
+
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+require File.expand_path('../../../shared/file/size', __FILE__)
+
+describe "File.size?" do
+  it_behaves_like :file_size,                     :size?, File
+end
+
+describe "File.size?" do
+  it_behaves_like :file_size_to_io,               :size?, File
+end
+
+describe "File.size?" do
+  it_behaves_like :file_size_nil_when_missing,    :size?, File
+end
+
+describe "File.size?" do
+  it_behaves_like :file_size_nil_when_empty,      :size?, File
+end
+
+describe "File.size?" do
+  it_behaves_like :file_size_with_file_argument,  :size?, File
+end
+
+describe "File.size" do
+  it_behaves_like :file_size,                     :size,  File
+end
+
+describe "File.size" do
+  it_behaves_like :file_size_to_io,               :size, File
+end
+
+describe "File.size" do
+  it_behaves_like :file_size_raise_when_missing,  :size,  File
+end
+
+describe "File.size" do
+  it_behaves_like :file_size_0_when_empty,        :size,  File
+end
+
+describe "File.size" do
+  it_behaves_like :file_size_with_file_argument,  :size,  File
+end
+
+ruby_version_is "1.9" do
+  describe "File#size" do
+
+    before :each do
+      @name = tmp('i_exist')
+      touch(@name) { |f| f.write 'rubinius' }
+      @file = File.new @name
+      @file_org = @file
+    end
+
+    after :each do
+      @file_org.close unless @file_org.closed?
+      rm_r @name
+    end
+
+    it "is an instance method" do
+      @file.respond_to?(:size).should be_true
+    end
+
+    it "returns the file's size as a Fixnum" do
+      @file.size.should be_an_instance_of(Fixnum)
+    end
+
+    it "returns the file's size in bytes" do
+      @file.size.should == 8
+    end
+
+    platform_is_not :windows do # impossible to remove opened file on Windows
+      it "returns the cached size of the file if subsequently deleted" do
+        rm_r @file
+        @file.size.should == 8
+      end
+    end
+
+    it "returns the file's current size even if modified" do
+      File.open(@file,'a') {|f| f.write '!'}
+      @file.size.should == 9
+    end
+
+    it "raises an IOError on a closed file" do
+      @file.close
+      lambda { @file.size }.should raise_error(IOError)
+    end
+
+    platform_is_not :windows do
+      it "follows symlinks if necessary" do
+        ln_file = tmp('i_exist_ln')
+        rm_r ln_file
+
+        begin
+          File.symlink(@file.path, ln_file).should == 0
+          file = File.new(ln_file)
+          file.size.should == 8
+        ensure
+          file.close if file && !file.closed?
+          File.unlink(ln_file) if File.exists?(ln_file)
+        end
+      end
+    end
+  end
+
+  describe "File#size for an empty file" do
+    before :each do
+      @name = tmp('empty')
+      touch(@name)
+      @file = File.new @name
+    end
+
+    after :each do
+      @file.close unless @file.closed?
+      rm_r @name
+    end
+
+    it "returns 0" do
+      @file.size.should == 0
+    end
+  end
+
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+require File.expand_path('../fixtures/classes', __FILE__)
+
+describe "Kernel#remove_instance_variable" do
+  it "is a private method" do
+    Kernel.should have_private_instance_method(:remove_instance_variable)
+  end
+
+  it "removes an ivar of a given name and return it's value" do
+    val = KernelSpecs::Ivar.new.send :remove_instance_variable, :@greeting
+    val.should == "hello"
+  end
+
+  it "supports the name being a string" do
+    val = KernelSpecs::Ivar.new.send :remove_instance_variable, "@greeting"
+    val.should == "hello"
+  end
+
+  it "tries to call #to_str if it's not a String or Symbol" do
+    s = mock("str")
+    s.should_receive(:to_str).and_return("@greeting")
+
+    val = KernelSpecs::Ivar.new.send :remove_instance_variable, s
+    val.should == "hello"
+  end
+
+  it "raises NameError if the ivar isn't defined" do
+    lambda {
+      KernelSpecs::Ivar.new.send :remove_instance_variable, :@unknown
+    }.should raise_error(NameError)
+  end
+
+  it "rejects unknown argument types" do
+    lambda {
+      KernelSpecs::Ivar.new.send :remove_instance_variable, Object
+    }.should raise_error(TypeError)
+  end
+end
+# combo.rb --
+#
+# This demonstration script creates several combobox widgets.
+#
+# based on "Id: combo.tcl,v 1.3 2007/12/13 15:27:07 dgp Exp"
+
+if defined?($combo_demo) && $combo_demo
+  $combo_demo.destroy
+  $combo_demo = nil
+end
+
+$combo_demo = TkToplevel.new {|w|
+  title("Combobox Demonstration")
+  iconname("combo")
+  positionWindow(w)
+}
+
+base_frame = TkFrame.new($combo_demo).pack(:fill=>:both, :expand=>true)
+
+Ttk::Label.new(base_frame, :font=>$font, :wraplength=>'5i', :justify=>:left,
+               :text=><<EOL).pack(:side=>:top, :fill=>:x)
+Three different combo-boxes are displayed below. \
+You can add characters to the first \
+one by pointing, clicking and typing, just as with an entry; pressing \
+Return will cause the current value to be added to the list that is \
+selectable from the drop-down list, and you can choose other values \
+by pressing the Down key, using the arrow keys to pick another one, \
+and pressing Return again. The second combo-box is fixed to a \
+particular value, and cannot be modified at all. The third one only \
+allows you to select values from its drop-down list of Australian \
+cities.
+EOL
+
+## variables
+firstValue  = TkVariable.new
+secondValue = TkVariable.new
+ozCity      = TkVariable.new
+
+## See Code / Dismiss buttons
+Ttk::Frame.new(base_frame) {|frame|
+  sep = Ttk::Separator.new(frame)
+  Tk.grid(sep, :columnspan=>4, :row=>0, :sticky=>'ew', :pady=>2)
+  TkGrid('x',
+         Ttk::Button.new(frame, :text=>'See Variables',
+                         :image=>$image['view'], :compound=>:left,
+                         :command=>proc{
+                           showVars(base_frame,
+                                    ['firstVariable', firstValue],
+                                    ['secondVariable', secondValue],
+                                    ['ozCity', ozCity])
+                         }),
+         Ttk::Button.new(frame, :text=>'See Code',
+                         :image=>$image['view'], :compound=>:left,
+                         :command=>proc{showCode 'combo'}),
+         Ttk::Button.new(frame, :text=>'Dismiss',
+                         :image=>$image['delete'], :compound=>:left,
+                         :command=>proc{
+                           $combo_demo.destroy
+                           $combo_demo = nil
+                         }),
+         :padx=>4, :pady=>4)
+  grid_columnconfigure(0, :weight=>1)
+  pack(:side=>:bottom, :fill=>:x)
+}
+
+frame = Ttk::Frame.new(base_frame).pack(:fill=>:both, :expand=>true)
+
+australianCities = [
+  'Canberra', 'Sydney', 'Melbourne', 'Perth', 'Adelaide', 'Brisbane',
+  'Hobart', 'Darwin', 'Alice Springs'
+]
+
+
+secondValue.value = 'unchangable'
+ozCity.value = 'Sydney'
+
+Tk.pack(Ttk::Labelframe.new(frame, :text=>'Fully Editable'){|f|
+          Ttk::Combobox.new(f, :textvariable=>firstValue){|b|
+            b.bind('Return', '%W'){|w|
+              w.values <<= w.value unless w.values.include?(w.value)
+            }
+          }.pack(:pady=>5, :padx=>10)
+        },
+
+        Ttk::LabelFrame.new(frame, :text=>'Disabled'){|f|
+          Ttk::Combobox.new(f, :textvariable=>secondValue, :state=>:disabled) .
+            pack(:pady=>5, :padx=>10)
+        },
+
+        Ttk::LabelFrame.new(frame, :text=>'Defined List Only'){|f|
+          Ttk::Combobox.new(f, :textvariable=>ozCity, :state=>:readonly,
+                            :values=>australianCities) .
+            pack(:pady=>5, :padx=>10)
+        },
+
+        :side=>:top, :pady=>5, :padx=>10)
+require 'rss/1.0'
+require 'rss/content'
+
+module RSS
+  RDF.install_ns(CONTENT_PREFIX, CONTENT_URI)
+
+  class RDF
+    class Item; include ContentModel; end
+  end
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+require File.expand_path('../fixtures/classes', __FILE__)
+
+describe "Hash#keys" do
+
+  ruby_version_is ""..."1.9" do
+    it "returns an array populated with keys" do
+      new_hash.keys.should == []
+      new_hash.keys.should be_kind_of(Array)
+      new_hash(5).keys.should == []
+      new_hash { 5 }.keys.should == []
+      new_hash(1 => 2, 2 => 4, 4 => 8).keys.sort.should == [1, 2, 4]
+      new_hash(1 => 2, 2 => 4, 4 => 8).keys.should be_kind_of(Array)
+      new_hash(nil => nil).keys.should == [nil]
+    end
+  end
+
+  ruby_version_is "1.9" do
+    it "returns an array with the keys in the order they were inserted" do
+      new_hash.keys.should == []
+      new_hash.keys.should be_kind_of(Array)
+      new_hash(5).keys.should == []
+      new_hash { 5 }.keys.should == []
+      new_hash(1 => 2, 4 => 8, 2 => 4).keys.should == [1, 4, 2]
+      new_hash(1 => 2, 2 => 4, 4 => 8).keys.should be_kind_of(Array)
+      new_hash(nil => nil).keys.should == [nil]
+    end
+  end
+
+
+  it "it uses the same order as #values" do
+    h = new_hash(1 => "1", 2 => "2", 3 => "3", 4 => "4")
+
+    h.size.times do |i|
+      h[h.keys[i]].should == h.values[i]
+    end
+  end
+end
+require 'spec_helper'
+
+describe Capybara::Driver::Culerity, :jruby => :installed do
+
+  before(:all) do
+    @driver = TestSessions::Culerity.driver
+  end
+
+  it_should_behave_like "driver"
+  it_should_behave_like "driver with javascript support"
+  it_should_behave_like "driver with header support"
+  it_should_behave_like "driver with status code support"
+  it_should_behave_like "driver with cookies support"
+end
+require 'omniauth/enterprise'
+require 'net/ldap'
+require 'sasl/base'
+require 'sasl'
+
+module OmniAuth
+  module Strategies
+    class LDAP
+      include OmniAuth::Strategy
+      
+      autoload :Adaptor, 'omniauth/strategies/ldap/adaptor'
+      @@config   = {'name' => 'cn', 
+                    'first_name' => 'givenName',
+                    'last_name' => 'sn',
+                    'email' => ['mail', "email", 'userPrincipalName'],
+					'phone' => ['telephoneNumber', 'homePhone', 'facsimileTelephoneNumber'],
+					'mobile_number' => ['mobile', 'mobileTelephoneNumber'],
+					'nickname' => ['uid', 'userid', 'sAMAccountName'],
+					'title' => 'title',
+					'location' => {"%0, %1, %2, %3 %4" => [['address', 'postalAddress', 'homePostalAddress', 'street', 'streetAddress'], ['l'], ['st'],['co'],['postOfficeBox']]},
+					'uid' => 'dn',
+					'url' => ['wwwhomepage'],
+					'image' => 'jpegPhoto',
+					'description' => 'description'}
+
+      # Initialize the LDAP Middleware
+      #
+      # @param [Rack Application] app Standard Rack middleware argument.
+      # @option options [String, 'LDAP Authentication'] :title A title for the authentication form.
+      def initialize(app, options = {}, &block)
+        super(app, options[:name] || :ldap, options.dup, &block)
+        @name_proc = (@options.delete(:name_proc) || Proc.new {|name| name})
+        @adaptor = OmniAuth::Strategies::LDAP::Adaptor.new(options)
+      end
+      
+      protected
+      
+      def request_phase
+        if env['REQUEST_METHOD'] == 'GET'
+          get_credentials
+        else
+          session['omniauth.ldap'] = {'username' => request['username'], 'password' => request['password']}
+          redirect callback_path
+        end
+      end
+
+  	  def get_credentials
+        OmniAuth::Form.build(options[:title] || "LDAP Authentication") do
+          text_field 'Login', 'username'
+          password_field 'Password', 'password'
+        end.to_response
+      end
+
+      def callback_phase 
+      	begin
+        creds = session.delete 'omniauth.ldap'
+				@ldap_user_info = {}
+        begin 
+        	(@adaptor.bind(:allow_anonymous => true) unless @adaptor.bound?) 
+        rescue Exception => e 
+        	puts "failed to bind with the default credentials: " + e.message
+       	end          
+        @ldap_user_info = @adaptor.search(:filter => Net::LDAP::Filter.eq(@adaptor.uid, @name_proc.call(creds['username'])),:limit => 1) if @adaptor.bound?
+				bind_dn = creds['username']
+				bind_dn = @ldap_user_info[:dn].to_a.first if @ldap_user_info[:dn]
+        @adaptor.bind(:bind_dn => bind_dn, :password => creds['password'])
+        @ldap_user_info = @adaptor.search(:filter => Net::LDAP::Filter.eq(@adaptor.uid, @name_proc.call(creds['username'])),:limit => 1) if @ldap_user_info.empty?
+    	  @user_info = self.class.map_user(@@config, @ldap_user_info)
+
+        @env['omniauth.auth'] = auth_hash
+	
+      	rescue Exception => e
+      	  return fail!(:invalid_credentials, e)
+      	end
+	      call_app!
+      end      
+      
+      def auth_hash
+        OmniAuth::Utils.deep_merge(super, {
+          'uid' => @user_info["uid"],
+          'user_info' => @user_info,
+          'extra' => @ldap_user_info
+        })
+      end
+      
+	  def self.map_user(mapper, object)
+		user = {}
+		mapper.each do |key, value|
+		  case value
+		  when String
+		    user[key] = object[value.downcase.to_sym].to_s if object[value.downcase.to_sym]
+		  when Array
+		    value.each {|v| (user[key] = object[v.downcase.to_sym].to_s; break;) if object[v.downcase.to_sym]}
+		  when Hash
+		    value.map do |key1, value1|
+			  pattern = key1.dup
+			  value1.each_with_index do |v,i|
+			    part = '';
+			    v.each {|v1| (part = object[v1.downcase.to_sym].to_s; break;) if object[v1.downcase.to_sym]}
+			    pattern.gsub!("%#{i}",part||'') 
+			  end	
+			  user[key] = pattern
+		    end
+		  end
+		end
+		user
+	  end       
+    end
+  end
+end
+require 'rubygems/command'
+require 'rubygems/server'
+
+class Gem::Commands::ServerCommand < Gem::Command
+
+  def initialize
+    super 'server', 'Documentation and gem repository HTTP server',
+          :port => 8808, :gemdir => [], :daemon => false
+
+    OptionParser.accept :Port do |port|
+      if port =~ /\A\d+\z/ then
+        port = Integer port
+        raise OptionParser::InvalidArgument, "#{port}: not a port number" if
+          port > 65535
+
+        port
+      else
+        begin
+          Socket.getservbyname port
+        rescue SocketError => e
+          raise OptionParser::InvalidArgument, "#{port}: no such named service"
+        end
+      end
+    end
+
+    add_option '-p', '--port=PORT', :Port,
+               'port to listen on' do |port, options|
+      options[:port] = port
+    end
+
+    add_option '-d', '--dir=GEMDIR',
+               'directories from which to serve gems',
+               'multiple directories may be provided' do |gemdir, options|
+      options[:gemdir] << File.expand_path(gemdir)
+    end
+
+    add_option '--[no-]daemon', 'run as a daemon' do |daemon, options|
+      options[:daemon] = daemon
+    end
+
+    add_option '-b', '--bind=HOST,HOST',
+               'addresses to bind', Array do |address, options|
+      options[:addresses] ||= []
+      options[:addresses].push(*address)
+    end
+  end
+
+  def defaults_str # :nodoc:
+    "--port 8808 --dir #{Gem.dir} --no-daemon"
+  end
+
+  def description # :nodoc:
+    <<-EOF
+The server command starts up a web server that hosts the RDoc for your
+installed gems and can operate as a server for installation of gems on other
+machines.
+
+The cache files for installed gems must exist to use the server as a source
+for gem installation.
+
+To install gems from a running server, use `gem install GEMNAME --source
+http://gem_server_host:8808`
+
+You can set up a shortcut to gem server documentation using the URL:
+
+  http://localhost:8808/rdoc?q=%s - Firefox
+  http://localhost:8808/rdoc?q=* - LaunchBar
+
+    EOF
+  end
+
+  def execute
+    options[:gemdir] << Gem.dir if options[:gemdir].empty?
+    Gem::Server.run options
+  end
+
+end
+
+require 'strscan'
+
+module Psych
+  ###
+  # Scan scalars for built in types
+  class ScalarScanner
+    # Taken from http://yaml.org/type/timestamp.html
+    TIME = /^\d{4}-\d{1,2}-\d{1,2}([Tt]|\s+)\d{1,2}:\d\d:\d\d(\.\d*)?(\s*Z|[-+]\d{1,2}(:\d\d)?)?/
+
+    # Create a new scanner
+    def initialize
+      @string_cache = {}
+    end
+
+    # Tokenize +string+ returning the ruby object
+    def tokenize string
+      return nil if string.empty?
+      return string if @string_cache.key?(string)
+
+      case string
+      when /^[A-Za-z~]/
+        if string.length > 5
+          @string_cache[string] = true
+          return string
+        end
+
+        case string
+        when /^[^ytonf~]/i
+          @string_cache[string] = true
+          string
+        when '~', /^null$/i
+          nil
+        when /^(yes|true|on)$/i
+          true
+        when /^(no|false|off)$/i
+          false
+        else
+          @string_cache[string] = true
+          string
+        end
+      when TIME
+        parse_time string
+      when /^\d{4}-\d{1,2}-\d{1,2}$/
+        require 'date'
+        Date.strptime(string, '%Y-%m-%d')
+      when /^\.inf$/i
+        1 / 0.0
+      when /^-\.inf$/i
+        -1 / 0.0
+      when /^\.nan$/i
+        0.0 / 0.0
+      when /^:./
+        if string =~ /^:(["'])(.*)\1/
+          $2.sub(/^:/, '').to_sym
+        else
+          string.sub(/^:/, '').to_sym
+        end
+      when /^[-+]?[1-9][0-9_]*(:[0-5]?[0-9])+$/
+        i = 0
+        string.split(':').each_with_index do |n,e|
+          i += (n.to_i * 60 ** (e - 2).abs)
+        end
+        i
+      when /^[-+]?[0-9][0-9_]*(:[0-5]?[0-9])+\.[0-9_]*$/
+        i = 0
+        string.split(':').each_with_index do |n,e|
+          i += (n.to_f * 60 ** (e - 2).abs)
+        end
+        i
+      else
+        return Integer(string.gsub(/[,_]/, '')) rescue ArgumentError
+        return Float(string.gsub(/[,_]/, '')) rescue ArgumentError
+        @string_cache[string] = true
+        string
+      end
+    end
+
+    ###
+    # Parse and return a Time from +string+
+    def parse_time string
+      date, time = *(string.split(/[ tT]/, 2))
+      (yy, m, dd) = date.split('-').map { |x| x.to_i }
+      md = time.match(/(\d+:\d+:\d+)(\.\d*)?\s*(Z|[-+]\d+(:\d\d)?)?/)
+
+      (hh, mm, ss) = md[1].split(':').map { |x| x.to_i }
+      us = (md[2] ? Rational(md[2].sub(/^\./, '0.')) : 0) * 1000000
+
+      time = Time.utc(yy, m, dd, hh, mm, ss, us)
+
+      return time if 'Z' == md[3]
+      return Time.at(time.to_i, us) unless md[3]
+
+      tz = md[3].split(':').map { |digit| Integer(digit, 10) }
+      offset = tz.first * 3600
+
+      if offset < 0
+        offset -= ((tz[1] || 0) * 60)
+      else
+        offset += ((tz[1] || 0) * 60)
+      end
+
+      Time.at((time - offset).to_i, us)
+    end
+  end
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+
+ruby_version_is "1.9" do
+  describe "IO#ungetbyte" do
+    it "needs to be reviewed for spec completeness"
+  end
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+require File.expand_path('../shared/extract_range_matched', __FILE__)
+require 'strscan'
+
+describe "StringScanner#pre_match" do
+  before :each do
+    @s = StringScanner.new("This is a test")
+  end
+
+  it "returns the pre-match (in the regular expression sense) of the last scan" do
+    @s.pre_match.should == nil
+    @s.scan(/\w+\s/)
+    @s.pre_match.should == ""
+    @s.getch
+    @s.pre_match.should == "This "
+    @s.get_byte
+    @s.pre_match.should == "This i"
+    @s.get_byte
+    @s.pre_match.should == "This is"
+  end
+
+  it "returns nil if there's no match" do
+    @s.scan(/\s+/)
+    @s.pre_match.should == nil
+  end
+
+  it "is more than just the data from the last match" do
+    @s.scan(/\w+/)
+    @s.scan_until(/a te/)
+    @s.pre_match.should == "This is "
+  end
+
+  it "is not changed when the scanner's position changes" do
+    @s.scan_until(/\s+/)
+    @s.pre_match.should == "This"
+    @s.pos -= 1
+    @s.pre_match.should == "This"
+  end
+
+  it_behaves_like :extract_range_matched, :pre_match
+end
+#--
+#
+# Author:: Francis Cianfrocca (gmail: blackhedd)
+# Homepage::  http://rubyeventmachine.com
+# Date:: 8 Apr 2006
+# 
+# See EventMachine and EventMachine::Connection for documentation and
+# usage examples.
+#
+#----------------------------------------------------------------------------
+#
+# Copyright (C) 2006-07 by Francis Cianfrocca. All Rights Reserved.
+# Gmail: blackhedd
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of either: 1) the GNU General Public License
+# as published by the Free Software Foundation; either version 2 of the
+# License, or (at your option) any later version; or 2) Ruby's License.
+# 
+# See the file COPYING for complete licensing information.
+#
+#-------------------------------------------------------------------
+#
+# 
+
+# TODO List:
+# TCP-connects currently assume non-blocking connect is available- need to
+#  degrade automatically on versions of Ruby prior to June 2006.
+#
+
+require 'singleton'
+require 'forwardable'
+require 'socket'
+require 'fcntl'
+require 'set'
+
+
+module EventMachine
+
+
+  class << self
+    # This is mostly useful for automated tests.
+    # Return a distinctive symbol so the caller knows whether he's dealing
+    # with an extension or with a pure-Ruby library.
+    def library_type
+      :pure_ruby
+    end
+
+    # #initialize_event_machine
+    def initialize_event_machine
+      Reactor.instance.initialize_for_run
+    end
+
+    # #add_oneshot_timer
+    #--
+    # Changed 04Oct06: intervals from the caller are now in milliseconds, but our native-ruby
+    # processor still wants them in seconds.
+    def add_oneshot_timer interval
+      Reactor.instance.install_oneshot_timer(interval / 1000)
+    end
+
+    # run_machine
+    def run_machine
+      Reactor.instance.run
+    end
+
+    # release_machine. Probably a no-op.
+    def release_machine
+    end
+
+    # #stop
+    def stop
+      Reactor.instance.stop
+    end
+
+    # #connect_server. Return a connection descriptor to the caller.
+    # TODO, what do we return here if we can't connect?
+    def connect_server host, port
+      bind_connect_server nil, nil, host, port
+    end
+
+    def bind_connect_server bind_addr, bind_port, host, port
+      EvmaTCPClient.connect(bind_addr, bind_port, host, port).uuid
+    end
+
+    # #send_data
+    def send_data target, data, datalength
+      selectable = Reactor.instance.get_selectable( target ) or raise "unknown send_data target"
+      selectable.send_data data
+    end
+
+    # #close_connection
+    # The extension version does NOT raise any kind of an error if an attempt is made
+    # to close a non-existent connection. Not sure whether we should. For now, we'll
+    # raise an error here in that case.
+    def close_connection target, after_writing
+      selectable = Reactor.instance.get_selectable( target ) or raise "unknown close_connection target"
+      selectable.schedule_close after_writing
+    end
+
+    # #start_tcp_server
+    def start_tcp_server host, port
+      (s = EvmaTCPServer.start_server host, port) or raise "no acceptor"
+      s.uuid
+    end
+
+    # #stop_tcp_server
+    def stop_tcp_server sig
+      s = Reactor.instance.get_selectable(sig)
+      s.schedule_close
+    end
+
+    # #start_unix_server
+    def start_unix_server chain
+      (s = EvmaUNIXServer.start_server chain) or raise "no acceptor"
+      s.uuid
+    end
+
+    # #connect_unix_server
+    def connect_unix_server chain
+      EvmaUNIXClient.connect(chain).uuid
+    end
+
+    # #signal_loopbreak
+    def signal_loopbreak
+      Reactor.instance.signal_loopbreak
+    end
+
+    # #get_peername
+    def get_peername sig
+      selectable = Reactor.instance.get_selectable( sig ) or raise "unknown get_peername target"
+      selectable.get_peername
+    end
+
+    # #open_udp_socket
+    def open_udp_socket host, port
+      EvmaUDPSocket.create(host, port).uuid
+    end
+
+    # #send_datagram. This is currently only for UDP!
+    # We need to make it work with unix-domain sockets as well.
+    def send_datagram target, data, datalength, host, port
+      selectable = Reactor.instance.get_selectable( target ) or raise "unknown send_data target"
+      selectable.send_datagram data, Socket::pack_sockaddr_in(port, host)
+    end
+
+
+    # #set_timer_quantum in milliseconds. The underlying Reactor function wants a (possibly
+    # fractional) number of seconds.
+    def set_timer_quantum interval
+      Reactor.instance.set_timer_quantum(( 1.0 * interval) / 1000.0)
+    end
+
+    # #epoll is a harmless no-op in the pure-Ruby implementation. This is intended to ensure
+    # that user code behaves properly across different EM implementations.
+    def epoll
+    end
+
+    # #ssl? is not implemented for pure-Ruby implementation
+    def ssl?
+      false
+    end
+
+    # #set_rlimit_nofile is a no-op in the pure-Ruby implementation. We simply return Ruby's built-in
+    # per-process file-descriptor limit.
+    def set_rlimit_nofile n
+      1024
+    end
+
+    # #set_max_timer_count is a harmless no-op in pure Ruby, which doesn't have a built-in limit
+    # on the number of available timers.
+    def set_max_timer_count n
+    end
+
+    # #send_file_data
+    def send_file_data sig, filename
+      sz = File.size(filename)
+      raise "file too large" if sz > 32*1024
+      data =
+      begin
+        File.read filename
+      rescue
+        ""
+      end
+      send_data sig, data, data.length
+    end
+
+    # #get_outbound_data_size
+    #
+    def get_outbound_data_size sig
+      r = Reactor.instance.get_selectable( sig ) or raise "unknown get_outbound_data_size target"
+      r.get_outbound_data_size
+    end
+
+    # #read_keyboard
+    #
+    def read_keyboard
+      EvmaKeyboard.open.uuid
+    end
+
+    # #set_comm_inactivity_timeout
+    #
+    def set_comm_inactivity_timeout sig, tm
+      r = Reactor.instance.get_selectable( sig ) or raise "unknown set_comm_inactivity_timeout target"
+      r.set_inactivity_timeout tm
+    end
+  end
+
+end
+
+
+#-----------------------------------------------------------------
+
+module EventMachine
+
+  class Error < Exception; end
+
+end
+
+#-----------------------------------------------------------------
+
+module EventMachine
+  class Connection
+    def get_outbound_data_size
+      EventMachine::get_outbound_data_size @signature
+    end
+  end
+end
+
+#-----------------------------------------------------------------
+
+module EventMachine
+
+  # Factored out so we can substitute other implementations
+  # here if desired, such as the one in ActiveRBAC.
+  module UuidGenerator
+
+    def self.generate
+      if @ix and @ix >= 10000
+        @ix = nil
+        @seed = nil
+      end
+
+      @seed ||= `uuidgen`.chomp.gsub(/-/,"")
+      @ix ||= 0
+
+      "#{@seed}#{@ix += 1}"
+    end
+
+  end
+
+end
+
+#-----------------------------------------------------------------
+
+module EventMachine
+
+  TimerFired = 100
+  ConnectionData = 101
+  ConnectionUnbound = 102
+  ConnectionAccepted = 103
+  ConnectionCompleted = 104
+  LoopbreakSignalled = 105
+
+end
+
+#-----------------------------------------------------------------
+
+module EventMachine
+class Reactor
+  include Singleton
+
+  HeartbeatInterval = 2
+
+  attr_reader :current_loop_time
+
+  def initialize
+    initialize_for_run
+  end
+
+  #--
+  # Replaced original implementation 05Dec07, was way too slow because of the sort.
+  def install_oneshot_timer interval
+    uuid = UuidGenerator::generate
+    #@timers << [Time.now + interval, uuid]
+    #@timers.sort! {|a,b| a.first <=> b.first}
+    @timers.add([Time.now + interval, uuid])
+    uuid
+  end
+
+  # Called before run, this is a good place to clear out arrays
+  # with cruft that may be left over from a previous run.
+  def initialize_for_run
+    @running = false
+    @stop_scheduled = false
+    @selectables ||= {}; @selectables.clear
+    @timers = SortedSet.new # []
+    set_timer_quantum(0.1)
+    @current_loop_time = Time.now
+    @next_heartbeat = @current_loop_time + HeartbeatInterval
+  end
+
+  def add_selectable io
+    @selectables[io.uuid] = io
+  end
+
+  def get_selectable uuid
+    @selectables[uuid]
+  end
+
+  def run
+    raise Error.new( "already running" ) if @running
+    @running = true
+
+    begin
+      open_loopbreaker
+
+      loop {
+        @current_loop_time = Time.now
+
+        break if @stop_scheduled
+        run_timers
+        break if @stop_scheduled
+        crank_selectables
+        break if @stop_scheduled
+        run_heartbeats
+      }
+    ensure
+      close_loopbreaker
+      @selectables.each {|k, io| io.close}
+      @selectables.clear
+
+      @running = false
+    end
+
+  end
+
+  def run_timers
+    @timers.each {|t|
+      if t.first <= @current_loop_time
+        @timers.delete t
+        EventMachine::event_callback "", TimerFired, t.last
+      else
+        break
+      end
+    }
+    #while @timers.length > 0 and @timers.first.first <= now
+    #  t = @timers.shift
+    #  EventMachine::event_callback "", TimerFired, t.last
+    #end
+  end
+
+  def run_heartbeats
+    if @next_heartbeat <= @current_loop_time
+      @next_heartbeat = @current_loop_time + HeartbeatInterval
+      @selectables.each {|k,io| io.heartbeat}
+    end
+  end
+
+  def crank_selectables
+      #$stderr.write 'R'
+
+      readers = @selectables.values.select {|io| io.select_for_reading?}
+      writers = @selectables.values.select {|io| io.select_for_writing?}
+
+      s = select( readers, writers, nil, @timer_quantum)
+
+      s and s[1] and s[1].each {|w| w.eventable_write }
+      s and s[0] and s[0].each {|r| r.eventable_read }
+
+      @selectables.delete_if {|k,io|
+        if io.close_scheduled?
+          io.close
+          true
+        end
+      }
+  end
+
+  # #stop
+  def stop
+    raise Error.new( "not running") unless @running
+    @stop_scheduled = true
+  end
+
+  def open_loopbreaker
+    # Can't use an IO.pipe because they can't be set nonselectable in Windows.
+    # Pick a random localhost UDP port.
+    #@loopbreak_writer.close if @loopbreak_writer
+    #rd,@loopbreak_writer = IO.pipe
+    @loopbreak_reader = UDPSocket.new
+    @loopbreak_writer = UDPSocket.new
+    bound = false
+    100.times {
+      @loopbreak_port = rand(10000) + 40000
+      begin
+        @loopbreak_reader.bind "localhost", @loopbreak_port
+        bound = true
+        break
+      rescue
+      end
+    }
+    raise "Unable to bind Loopbreaker" unless bound
+    LoopbreakReader.new(@loopbreak_reader)
+  end
+
+  def close_loopbreaker
+    @loopbreak_writer.close
+    @loopbreak_writer = nil
+  end
+
+  def signal_loopbreak
+    #@loopbreak_writer.write '+' if @loopbreak_writer
+    @loopbreak_writer.send('+',0,"localhost",@loopbreak_port) if @loopbreak_writer
+  end
+
+  def set_timer_quantum interval_in_seconds
+    @timer_quantum = interval_in_seconds
+  end
+
+end
+
+end
+
+
+#--------------------------------------------------------------
+
+class IO
+  extend Forwardable
+  def_delegator :@my_selectable, :close_scheduled?
+  def_delegator :@my_selectable, :select_for_reading?
+  def_delegator :@my_selectable, :select_for_writing?
+  def_delegator :@my_selectable, :eventable_read
+  def_delegator :@my_selectable, :eventable_write
+  def_delegator :@my_selectable, :uuid
+  def_delegator :@my_selectable, :send_data
+  def_delegator :@my_selectable, :schedule_close
+  def_delegator :@my_selectable, :get_peername
+  def_delegator :@my_selectable, :send_datagram
+  def_delegator :@my_selectable, :get_outbound_data_size
+  def_delegator :@my_selectable, :set_inactivity_timeout
+  def_delegator :@my_selectable, :heartbeat
+end
+
+#--------------------------------------------------------------
+
+module EventMachine
+  class Selectable
+
+    attr_reader :io, :uuid
+
+    def initialize io
+      @uuid = UuidGenerator.generate
+      @io = io
+      @last_activity = Reactor.instance.current_loop_time
+
+      if defined?(Fcntl::F_GETFL)
+        m = @io.fcntl(Fcntl::F_GETFL, 0)
+        @io.fcntl(Fcntl::F_SETFL, Fcntl::O_NONBLOCK | m)
+      else
+        # Windows doesn't define F_GETFL.
+        # It's not very reliable about setting descriptors nonblocking either.
+        begin
+          s = Socket.for_fd(@io.fileno)
+          s.fcntl( Fcntl::F_SETFL, Fcntl::O_NONBLOCK )
+        rescue Errno::EINVAL, Errno::EBADF
+          STDERR.puts "Serious error: unable to set descriptor non-blocking"
+        end
+      end
+      # TODO, should set CLOEXEC on Unix?
+
+      @close_scheduled = false
+      @close_requested = false
+
+      se = self; @io.instance_eval { @my_selectable = se }
+      Reactor.instance.add_selectable @io
+    end
+
+    def close_scheduled?
+      @close_scheduled
+    end
+
+    def select_for_reading?
+      false
+    end
+
+    def select_for_writing?
+      false
+    end
+
+    def get_peername
+      nil
+    end
+
+    def set_inactivity_timeout tm
+      @inactivity_timeout = tm
+    end
+
+    def heartbeat
+    end
+  end
+
+end
+
+#--------------------------------------------------------------
+
+
+module EventMachine
+
+  class StreamObject < Selectable
+    def initialize io
+      super io
+      @outbound_q = []
+    end
+
+    # If we have to close, or a close-after-writing has been requested,
+    # then don't read any more data.
+    def select_for_reading?
+      true unless (@close_scheduled || @close_requested)
+    end
+
+    # If we have to close, don't select for writing.
+    # Otherwise, see if the protocol is ready to close.
+    # If not, see if he has data to send.
+    # If a close-after-writing has been requested and the outbound queue
+    # is empty, convert the status to close_scheduled.
+    def select_for_writing?
+      unless @close_scheduled
+        if @outbound_q.empty?
+          @close_scheduled = true if @close_requested
+          false
+        else
+          true
+        end
+      end
+    end
+
+    # Proper nonblocking I/O was added to Ruby 1.8.4 in May 2006.
+    # If we have it, then we can read multiple times safely to improve
+    # performance.
+    # The last-activity clock ASSUMES that we only come here when we
+    # have selected readable.
+    # TODO, coalesce multiple reads into a single event.
+    # TODO, do the function check somewhere else and cache it.
+    def eventable_read
+      @last_activity = Reactor.instance.current_loop_time
+      begin
+        if io.respond_to?(:read_nonblock)
+          10.times {
+            data = io.read_nonblock(4096)
+            EventMachine::event_callback uuid, ConnectionData, data
+          }
+        else
+          data = io.sysread(4096)
+          EventMachine::event_callback uuid, ConnectionData, data
+        end
+      rescue Errno::EAGAIN, Errno::EWOULDBLOCK
+        # no-op
+      rescue Errno::ECONNRESET, Errno::ECONNREFUSED, EOFError
+        @close_scheduled = true
+        EventMachine::event_callback uuid, ConnectionUnbound, nil
+      end
+
+    end
+
+    # Provisional implementation. Will be re-implemented in subclasses.
+    # TODO: Complete this implementation. As it stands, this only writes
+    # a single packet per cycle. Highly inefficient, but required unless
+    # we're running on a Ruby with proper nonblocking I/O (Ruby 1.8.4
+    # built from sources from May 25, 2006 or newer).
+    # We need to improve the loop so it writes multiple times, however
+    # not more than a certain number of bytes per cycle, otherwise
+    # one busy connection could hog output buffers and slow down other
+    # connections. Also we should coalesce small writes.
+    # URGENT TODO: Coalesce small writes. They are a performance killer.
+    # The last-activity recorder ASSUMES we'll only come here if we've
+    # selected writable.
+    def eventable_write
+      # coalesce the outbound array here, perhaps
+      @last_activity = Reactor.instance.current_loop_time
+      while data = @outbound_q.shift do
+        begin
+          data = data.to_s
+          w = if io.respond_to?(:write_nonblock)
+            io.write_nonblock data
+          else
+            io.syswrite data
+          end
+
+          if w < data.length
+            @outbound_q.unshift data[w..-1]
+            break
+          end
+        rescue Errno::EAGAIN
+          @outbound_q.unshift data
+        rescue EOFError, Errno::ECONNRESET, Errno::ECONNREFUSED
+          @close_scheduled = true
+          @outbound_q.clear
+        end
+      end
+
+    end
+
+    # #send_data
+    def send_data data
+      # TODO, coalesce here perhaps by being smarter about appending to @outbound_q.last?
+      unless @close_scheduled or @close_requested or !data or data.length <= 0
+        @outbound_q << data.to_s
+      end
+    end
+
+    # #schedule_close
+    # The application wants to close the connection.
+    def schedule_close after_writing
+      if after_writing
+        @close_requested = true
+      else
+        @close_scheduled = true
+      end
+    end
+
+    # #get_peername
+    # This is defined in the normal way on connected stream objects.
+    # Return an object that is suitable for passing to Socket#unpack_sockaddr_in or variants.
+    # We could also use a convenience method that did the unpacking automatically.
+    def get_peername
+      io.getpeername
+    end
+
+    # #get_outbound_data_size
+    def get_outbound_data_size
+      @outbound_q.inject(0) {|memo,obj| memo += (obj || "").length}
+    end
+
+    def heartbeat
+      if @inactivity_timeout and @inactivity_timeout > 0 and (@last_activity + @inactivity_timeout) < Reactor.instance.current_loop_time
+        schedule_close true
+      end
+    end
+  end
+
+
+end
+
+
+#--------------------------------------------------------------
+
+
+
+module EventMachine
+  class EvmaTCPClient < StreamObject
+
+    def self.connect bind_addr, bind_port, host, port
+      sd = Socket.new( Socket::AF_INET, Socket::SOCK_STREAM, 0 )
+      sd.bind( Socket.pack_sockaddr_in( bind_port, bind_addr ))  if bind_addr
+
+      begin
+        # TODO, this assumes a current Ruby snapshot.
+        # We need to degrade to a nonblocking connect otherwise.
+        sd.connect_nonblock( Socket.pack_sockaddr_in( port, host ))
+      rescue Errno::EINPROGRESS
+      end
+      EvmaTCPClient.new sd
+    end
+
+
+    def initialize io
+      super
+      @pending = true
+    end
+
+
+    def select_for_writing?
+      @pending ? true : super
+    end
+
+    def select_for_reading?
+      @pending ? false : super
+    end
+
+    def eventable_write
+      if @pending
+        @pending = false
+        if 0 == io.getsockopt(Socket::SOL_SOCKET, Socket::SO_ERROR).unpack("i").first
+          EventMachine::event_callback uuid, ConnectionCompleted, ""
+        end
+      else
+        super
+      end
+    end
+
+
+
+  end
+end
+
+#--------------------------------------------------------------
+
+
+
+module EventMachine
+  class EvmaKeyboard < StreamObject
+
+    def self.open
+      EvmaKeyboard.new STDIN
+    end
+
+
+    def initialize io
+      super
+    end
+
+
+    def select_for_writing?
+      false
+    end
+
+    def select_for_reading?
+      true
+    end
+
+
+  end
+end
+
+
+#--------------------------------------------------------------
+
+
+
+module EventMachine
+  class EvmaUNIXClient < StreamObject
+
+    def self.connect chain
+      sd = Socket.new( Socket::AF_LOCAL, Socket::SOCK_STREAM, 0 )
+      begin
+        # TODO, this assumes a current Ruby snapshot.
+        # We need to degrade to a nonblocking connect otherwise.
+        sd.connect_nonblock( Socket.pack_sockaddr_un( chain ))
+      rescue Errno::EINPROGRESS
+      end
+      EvmaUNIXClient.new sd
+    end
+
+
+    def initialize io
+      super
+      @pending = true
+    end
+
+
+    def select_for_writing?
+      @pending ? true : super
+    end
+
+    def select_for_reading?
+      @pending ? false : super
+    end
+
+    def eventable_write
+      if @pending
+        @pending = false
+        if 0 == io.getsockopt(Socket::SOL_SOCKET, Socket::SO_ERROR).unpack("i").first
+          EventMachine::event_callback uuid, ConnectionCompleted, ""
+        end
+      else
+        super
+      end
+    end
+
+
+
+  end
+end
+
+
+#--------------------------------------------------------------
+
+module EventMachine
+  class EvmaTCPServer < Selectable
+
+    # TODO, refactor and unify with EvmaUNIXServer.
+
+    class << self
+      # Versions of ruby 1.8.4 later than May 26 2006 will work properly
+      # with an object of type TCPServer. Prior versions won't so we
+      # play it safe and just build a socket.
+      #
+      def start_server host, port
+        sd = Socket.new( Socket::AF_INET, Socket::SOCK_STREAM, 0 )
+        sd.setsockopt( Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true )
+        sd.bind( Socket.pack_sockaddr_in( port, host ))
+        sd.listen( 50 ) # 5 is what you see in all the books. Ain't enough.
+        EvmaTCPServer.new sd
+      end
+    end
+
+    def initialize io
+      super io
+    end
+
+
+    def select_for_reading?
+      true
+    end
+
+    #--
+    # accept_nonblock returns an array consisting of the accepted
+    # socket and a sockaddr_in which names the peer.
+    # Don't accept more than 10 at a time.
+    def eventable_read
+      begin
+        10.times {
+          descriptor,peername = io.accept_nonblock
+          sd = StreamObject.new descriptor
+          EventMachine::event_callback uuid, ConnectionAccepted, sd.uuid
+        }
+      rescue Errno::EWOULDBLOCK, Errno::EAGAIN
+      end
+    end
+
+    #--
+    #
+    def schedule_close
+      @close_scheduled = true
+    end
+
+  end
+end
+
+
+#--------------------------------------------------------------
+
+module EventMachine
+  class EvmaUNIXServer < Selectable
+
+    # TODO, refactor and unify with EvmaTCPServer.
+
+    class << self
+      # Versions of ruby 1.8.4 later than May 26 2006 will work properly
+      # with an object of type TCPServer. Prior versions won't so we
+      # play it safe and just build a socket.
+      #
+      def start_server chain
+        sd = Socket.new( Socket::AF_LOCAL, Socket::SOCK_STREAM, 0 )
+        sd.setsockopt( Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true )
+        sd.bind( Socket.pack_sockaddr_un( chain ))
+        sd.listen( 50 ) # 5 is what you see in all the books. Ain't enough.
+        EvmaUNIXServer.new sd
+      end
+    end
+
+    def initialize io
+      super io
+    end
+
+
+    def select_for_reading?
+      true
+    end
+
+    #--
+    # accept_nonblock returns an array consisting of the accepted
+    # socket and a sockaddr_in which names the peer.
+    # Don't accept more than 10 at a time.
+    def eventable_read
+      begin
+        10.times {
+          descriptor,peername = io.accept_nonblock
+          sd = StreamObject.new descriptor
+          EventMachine::event_callback uuid, ConnectionAccepted, sd.uuid
+        }
+      rescue Errno::EWOULDBLOCK, Errno::EAGAIN
+      end
+    end
+
+    #--
+    #
+    def schedule_close
+      @close_scheduled = true
+    end
+
+  end
+end
+
+
+
+#--------------------------------------------------------------
+
+module EventMachine
+  class LoopbreakReader < Selectable
+
+    def select_for_reading?
+      true
+    end
+
+    def eventable_read
+          io.sysread(128)
+          EventMachine::event_callback "", LoopbreakSignalled, ""
+    end
+
+  end
+end
+
+#--------------------------------------------------------------
+
+
+module EventMachine
+
+  class DatagramObject < Selectable
+    def initialize io
+      super io
+      @outbound_q = []
+    end
+
+    # #send_datagram
+    def send_datagram data, target
+      # TODO, coalesce here perhaps by being smarter about appending to @outbound_q.last?
+      unless @close_scheduled or @close_requested
+        @outbound_q << [data.to_s, target]
+      end
+    end
+
+    # #select_for_writing?
+    def select_for_writing?
+      unless @close_scheduled
+        if @outbound_q.empty?
+          @close_scheduled = true if @close_requested
+          false
+        else
+          true
+        end
+      end
+    end
+
+    # #select_for_reading?
+    def select_for_reading?
+      true
+    end
+
+    # #get_outbound_data_size
+    def get_outbound_data_size
+      @outbound_q.inject(0) {|memo,obj| memo += (obj || "").length}
+    end
+
+
+  end
+
+
+end
+
+
+#--------------------------------------------------------------
+
+module EventMachine
+  class EvmaUDPSocket < DatagramObject
+
+    class << self
+      def create host, port
+        sd = Socket.new( Socket::AF_INET, Socket::SOCK_DGRAM, 0 )
+        sd.bind Socket::pack_sockaddr_in( port, host )
+        EvmaUDPSocket.new sd
+      end
+    end
+
+    # #eventable_write
+    # This really belongs in DatagramObject, but there is some UDP-specific stuff.
+    def eventable_write
+      40.times {
+        break if @outbound_q.empty?
+        begin
+          data,target = @outbound_q.first
+
+          # This damn better be nonblocking.
+          io.send data.to_s, 0, target
+
+          @outbound_q.shift
+        rescue Errno::EAGAIN
+          # It's not been observed in testing that we ever get here.
+          # True to the definition, packets will be accepted and quietly dropped
+          # if the system is under pressure.
+          break
+        rescue EOFError, Errno::ECONNRESET
+          @close_scheduled = true
+          @outbound_q.clear
+        end
+      }
+    end
+
+    # Proper nonblocking I/O was added to Ruby 1.8.4 in May 2006.
+    # If we have it, then we can read multiple times safely to improve
+    # performance.
+    def eventable_read
+      begin
+        if io.respond_to?(:recvfrom_nonblock)
+          40.times {
+            data,@return_address = io.recvfrom_nonblock(16384)
+            EventMachine::event_callback uuid, ConnectionData, data
+            @return_address = nil
+          }
+        else
+          raise "unimplemented datagram-read operation on this Ruby"
+        end
+      rescue Errno::EAGAIN
+        # no-op
+      rescue Errno::ECONNRESET, EOFError
+        @close_scheduled = true
+        EventMachine::event_callback uuid, ConnectionUnbound, nil
+      end
+
+    end
+
+
+    def send_data data
+      send_datagram data, @return_address
+    end
+
+  end
+end
+
+#--------------------------------------------------------------
+
+
+require File.expand_path('../../../../../spec_helper', __FILE__)
+require 'net/http'
+
+describe "Net::HTTP#open_timeout" do
+  it "returns the seconds to wait till the connection is open" do
+    net = Net::HTTP.new("localhost")
+    net.open_timeout.should be_nil
+    net.open_timeout = 10
+    net.open_timeout.should eql(10)
+  end
+end
+
+describe "Net::HTTP#open_timeout=" do
+  it "sets the seconds to wait till the connection is open" do
+    net = Net::HTTP.new("localhost")
+    net.open_timeout = 10
+    net.open_timeout.should eql(10)
+  end
+  
+  it "returns the newly set value" do
+    net = Net::HTTP.new("localhost")
+    (net.open_timeout = 10).should eql(10)
+  end
+end
+begin
+  require 'win32ole'
+rescue LoadError
+end
+require 'test/unit'
+require 'fileutils'
+
+def ado_csv_installed?
+  installed = false
+  if defined?(WIN32OLE)
+    db = nil
+    begin
+      db = WIN32OLE.new('ADODB.Connection')
+      db.connectionString = "Driver={Microsoft Text Driver (*.txt; *.csv)};DefaultDir=.;"
+      db.open
+      db.close
+      db = nil
+      installed = true
+    rescue
+    end
+  end
+  installed
+end
+
+if defined?(WIN32OLE_VARIANT)
+  dotest = ado_csv_installed?
+  if !dotest
+    STDERR.puts("\n#{__FILE__} skipped(ActiveX Data Object Library not found.)")
+  end
+  if dotest
+    class TestWIN32OLE_VARIANT_OUTARG < Test::Unit::TestCase
+      module ADO
+      end
+      CONNSTR="Driver={Microsoft Text Driver (*.txt; *.csv)};DefaultDir=.;"
+      def setup
+        FileUtils.cp(File.dirname(__FILE__) + '/orig_data.csv', './data.csv')
+        @db = WIN32OLE.new('ADODB.Connection')
+        if !defined?(ADO::AdStateOpen)
+          WIN32OLE.const_load(@db, ADO)
+        end
+        @db.connectionString = CONNSTR
+        @db.open
+      end
+
+      def test_variant_ref_and_argv
+        sql = "INSERT INTO data.csv VALUES (5, 'E')"
+        @db.execute(sql, -1)
+        c = WIN32OLE::ARGV[1]
+        assert_equal(1, WIN32OLE::ARGV[1])
+        obj = WIN32OLE_VARIANT.new(nil, WIN32OLE::VARIANT::VT_VARIANT|WIN32OLE::VARIANT::VT_BYREF)
+        assert_equal(nil, obj.value)
+        @db.execute(sql , obj)
+        assert_equal(1, obj.value)
+        obj = WIN32OLE_VARIANT.new(-100, WIN32OLE::VARIANT::VT_VARIANT|WIN32OLE::VARIANT::VT_BYREF)
+        assert_equal(-100, obj.value)
+        @db.execute(sql, obj)
+        assert_equal(1, obj.value)
+      end
+
+      def teardown
+        if @db && @db.state == ADO::AdStateOpen
+          @db.close
+        end
+        File.unlink("data.csv")
+      end
+
+    end
+  end
+end
+require File.expand_path('../../spec_helper', __FILE__)
+
+describe "A Colon3 node" do
+  relates "::X" do
+    compile do |g|
+      g.push_cpath_top
+      g.find_const :X
+    end
+  end
+end
+module TZInfo
+  module Definitions
+    module America
+      module Eirunepe
+        include TimezoneDefinition
+        
+        timezone 'America/Eirunepe' do |tz|
+          tz.offset :o0, -16768, 0, :LMT
+          tz.offset :o1, -18000, 0, :ACT
+          tz.offset :o2, -18000, 3600, :ACST
+          tz.offset :o3, -14400, 0, :AMT
+          
+          tz.transition 1914, 1, :o1, 3267180487, 1350
+          tz.transition 1931, 10, :o2, 14559709, 6
+          tz.transition 1932, 4, :o1, 7280396, 3
+          tz.transition 1932, 10, :o2, 58247609, 24
+          tz.transition 1933, 4, :o1, 7281491, 3
+          tz.transition 1949, 12, :o2, 58398041, 24
+          tz.transition 1950, 4, :o1, 58401305, 24
+          tz.transition 1950, 12, :o2, 58406801, 24
+          tz.transition 1951, 4, :o1, 7301213, 3
+          tz.transition 1951, 12, :o2, 58415561, 24
+          tz.transition 1952, 4, :o1, 7302311, 3
+          tz.transition 1952, 12, :o2, 58424345, 24
+          tz.transition 1953, 3, :o1, 7303313, 3
+          tz.transition 1963, 12, :o2, 58520945, 24
+          tz.transition 1964, 3, :o1, 7315367, 3
+          tz.transition 1965, 1, :o2, 58531001, 24
+          tz.transition 1965, 3, :o1, 7316552, 3
+          tz.transition 1965, 12, :o2, 58538297, 24
+          tz.transition 1966, 3, :o1, 7317557, 3
+          tz.transition 1966, 11, :o2, 58546337, 24
+          tz.transition 1967, 3, :o1, 7318652, 3
+          tz.transition 1967, 11, :o2, 58555097, 24
+          tz.transition 1968, 3, :o1, 7319750, 3
+          tz.transition 1985, 11, :o2, 499755600
+          tz.transition 1986, 3, :o1, 511243200
+          tz.transition 1986, 10, :o2, 530600400
+          tz.transition 1987, 2, :o1, 540273600
+          tz.transition 1987, 10, :o2, 562136400
+          tz.transition 1988, 2, :o1, 571204800
+          tz.transition 1993, 10, :o2, 750834000
+          tz.transition 1994, 2, :o1, 761716800
+          tz.transition 2008, 6, :o3, 1214283600
+        end
+      end
+    end
+  end
+end
+module VCR
+  class Cassette
+    def allow_real_http_requests_to?(uri)
+      warn "WARNING: VCR::Cassette#allow_real_http_requests_to? is deprecated and should no longer be used."
+      VCR::Config.uri_should_be_ignored?(uri.to_s)
+    end
+
+    private
+
+      def deprecate_old_cassette_options(options)
+        message = "VCR's :allow_real_http cassette option is deprecated.  Instead, use the ignore_localhost configuration option."
+        if options[:allow_real_http] == :localhost
+          @original_ignored_hosts = VCR::Config.ignored_hosts.dup
+          VCR::Config.ignored_hosts.clear
+          VCR::Config.ignore_hosts *VCR::LOCALHOST_ALIASES
+          Kernel.warn "WARNING: #{message}"
+        elsif options[:allow_real_http]
+          raise ArgumentError.new(message)
+        end
+      end
+
+      def restore_ignore_localhost_for_deprecation
+        if defined?(@original_ignored_hosts)
+          VCR::Config.ignored_hosts.clear
+          VCR::Config.ignore_hosts *@original_ignored_hosts
+        end
+      end
+    end
+end
+require "webrat/core_extensions/detect_mapped"
+require "webrat/core/locators/locator"
+
+module Webrat
+  module Locators
+
+    class LabelLocator < Locator # :nodoc:
+
+      def locate
+        Label.load(@session, label_element)
+      end
+
+      def label_element
+        label_elements.detect do |label_element|
+          text(label_element) =~ /^\W*#{Regexp.escape(@value.to_s)}(\b|\Z)/i
+        end
+      end
+
+      def label_elements
+        @dom.xpath(*Label.xpath_search)
+      end
+
+      def text(label_element)
+        str = label_element.inner_text
+        str.gsub!("\n","")
+        str.strip!
+        str.squeeze!(" ")
+        str
+      end
+
+    end
+
+  end
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+
+ruby_version_is "1.9" do
+  describe "GC.count" do
+    it "needs to be reviewed for spec completeness"
+  end
+end
+# Autogenerated from a Treetop grammar. Edits may be lost.
+
+
+module Mail
+  module EnvelopeFrom
+    include Treetop::Runtime
+
+    def root
+      @root ||= :primary
+    end
+
+    include RFC2822
+
+    module Primary0
+      def addr_spec
+        elements[0]
+      end
+
+      def ctime_date
+        elements[1]
+      end
+    end
+
+    def _nt_primary
+      start_index = index
+      if node_cache[:primary].has_key?(index)
+        cached = node_cache[:primary][index]
+        if cached
+          cached = SyntaxNode.new(input, index...(index + 1)) if cached == true
+          @index = cached.interval.end
+        end
+        return cached
+      end
+
+      i0, s0 = index, []
+      r1 = _nt_addr_spec
+      s0 << r1
+      if r1
+        r2 = _nt_ctime_date
+        s0 << r2
+      end
+      if s0.last
+        r0 = instantiate_node(SyntaxNode,input, i0...index, s0)
+        r0.extend(Primary0)
+      else
+        @index = i0
+        r0 = nil
+      end
+
+      node_cache[:primary][start_index] = r0
+
+      r0
+    end
+
+    module CtimeDate0
+      def day_name
+        elements[0]
+      end
+
+      def month_name
+        elements[2]
+      end
+
+      def day
+        elements[4]
+      end
+
+      def time_of_day
+        elements[6]
+      end
+
+      def year
+        elements[8]
+      end
+    end
+
+    def _nt_ctime_date
+      start_index = index
+      if node_cache[:ctime_date].has_key?(index)
+        cached = node_cache[:ctime_date][index]
+        if cached
+          cached = SyntaxNode.new(input, index...(index + 1)) if cached == true
+          @index = cached.interval.end
+        end
+        return cached
+      end
+
+      i0, s0 = index, []
+      r1 = _nt_day_name
+      s0 << r1
+      if r1
+        s2, i2 = [], index
+        loop do
+          if has_terminal?(" ", false, index)
+            r3 = instantiate_node(SyntaxNode,input, index...(index + 1))
+            @index += 1
+          else
+            terminal_parse_failure(" ")
+            r3 = nil
+          end
+          if r3
+            s2 << r3
+          else
+            break
+          end
+        end
+        if s2.empty?
+          @index = i2
+          r2 = nil
+        else
+          r2 = instantiate_node(SyntaxNode,input, i2...index, s2)
+        end
+        s0 << r2
+        if r2
+          r4 = _nt_month_name
+          s0 << r4
+          if r4
+            s5, i5 = [], index
+            loop do
+              if has_terminal?(" ", false, index)
+                r6 = instantiate_node(SyntaxNode,input, index...(index + 1))
+                @index += 1
+              else
+                terminal_parse_failure(" ")
+                r6 = nil
+              end
+              if r6
+                s5 << r6
+              else
+                break
+              end
+            end
+            if s5.empty?
+              @index = i5
+              r5 = nil
+            else
+              r5 = instantiate_node(SyntaxNode,input, i5...index, s5)
+            end
+            s0 << r5
+            if r5
+              r7 = _nt_day
+              s0 << r7
+              if r7
+                if has_terminal?(" ", false, index)
+                  r8 = instantiate_node(SyntaxNode,input, index...(index + 1))
+                  @index += 1
+                else
+                  terminal_parse_failure(" ")
+                  r8 = nil
+                end
+                s0 << r8
+                if r8
+                  r9 = _nt_time_of_day
+                  s0 << r9
+                  if r9
+                    if has_terminal?(" ", false, index)
+                      r10 = instantiate_node(SyntaxNode,input, index...(index + 1))
+                      @index += 1
+                    else
+                      terminal_parse_failure(" ")
+                      r10 = nil
+                    end
+                    s0 << r10
+                    if r10
+                      r11 = _nt_year
+                      s0 << r11
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+      if s0.last
+        r0 = instantiate_node(SyntaxNode,input, i0...index, s0)
+        r0.extend(CtimeDate0)
+      else
+        @index = i0
+        r0 = nil
+      end
+
+      node_cache[:ctime_date][start_index] = r0
+
+      r0
+    end
+
+  end
+
+  class EnvelopeFromParser < Treetop::Runtime::CompiledParser
+    include EnvelopeFrom
+  end
+
+endmodule Net; module SSH; module Connection
+
+  # Definitions of constants that are specific to the connection layer of the
+  # SSH protocol.
+  module Constants
+
+    #--
+    # Connection protocol generic messages
+    #++
+
+    GLOBAL_REQUEST            = 80
+    REQUEST_SUCCESS           = 81
+    REQUEST_FAILURE           = 82
+
+    #--
+    # Channel related messages
+    #++
+
+    CHANNEL_OPEN              = 90
+    CHANNEL_OPEN_CONFIRMATION = 91
+    CHANNEL_OPEN_FAILURE      = 92
+    CHANNEL_WINDOW_ADJUST     = 93
+    CHANNEL_DATA              = 94
+    CHANNEL_EXTENDED_DATA     = 95
+    CHANNEL_EOF               = 96
+    CHANNEL_CLOSE             = 97
+    CHANNEL_REQUEST           = 98
+    CHANNEL_SUCCESS           = 99
+    CHANNEL_FAILURE           = 100
+
+  end
+
+end; end endWhen /^I run cucumber "([^"]*)"$/ do |cmd|
+  run_simple(unescape("cucumber #{cmd}"), false)
+end
+
+Then /^it should (pass|fail) with JSON:$/ do |pass_fail, json|
+  JSON.pretty_generate(JSON.parse(all_stdout)).should == JSON.pretty_generate(JSON.parse(json))
+  assert_exiting_with(pass_fail == 'pass')
+end
+require 'rails/generators/active_record'
+
+module ActiveRecord
+  module Generators
+    class MigrationGenerator < Base
+      argument :attributes, :type => :array, :default => [], :banner => "field:type field:type"
+
+      def create_migration_file
+        set_local_assigns!
+        migration_template "migration.rb", "db/migrate/#{file_name}.rb"
+      end
+
+      protected
+        attr_reader :migration_action
+
+        def set_local_assigns!
+          if file_name =~ /^(add|remove)_.*_(?:to|from)_(.*)/
+            @migration_action = $1
+            @table_name       = $2.pluralize
+          end
+        end
+
+    end
+  end
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+require File.expand_path('../fixtures/classes', __FILE__)
+
+describe "Enumerable#sort" do
+  it "sorts by the natural order as defined by <=> " do
+    EnumerableSpecs::Numerous.new.sort.should == [1, 2, 3, 4, 5, 6]
+    sorted = EnumerableSpecs::ComparesByVowelCount.wrap("a" * 1, "a" * 2, "a"*3, "a"*4, "a"*5)
+    EnumerableSpecs::Numerous.new(sorted[2],sorted[0],sorted[1],sorted[3],sorted[4]).sort.should == sorted
+  end
+
+  it "yields elements to the provided block" do
+    EnumerableSpecs::Numerous.new.sort { |a, b| b <=> a }.should == [6, 5, 4, 3, 2, 1]
+    EnumerableSpecs::Numerous.new(2,0,1,3,4).sort { |n, m| -(n <=> m) }.should == [4,3,2,1,0]
+  end
+
+  ruby_version_is ""..."1.9" do
+    it "raises a NoMethodError if elements do not define <=>" do
+      lambda {
+        EnumerableSpecs::Numerous.new(Object.new, Object.new, Object.new).sort
+      }.should raise_error(NoMethodError)
+    end
+  end
+
+  ruby_version_is "1.9" do
+    it "raises a NoMethodError if elements do not define <=>" do
+      lambda do
+        EnumerableSpecs::Numerous.new(BasicObject.new, BasicObject.new, BasicObject.new).sort
+      end.should raise_error(NoMethodError)
+    end
+  end
+
+  it "sorts enumerables that contain nils" do
+    arr = EnumerableSpecs::Numerous.new(nil, true, nil, false, nil, true, nil, false, nil)
+    arr.sort { |a, b|
+      x = a ? -1 : a.nil? ? 0 : 1
+      y = b ? -1 : b.nil? ? 0 : 1
+      x <=> y
+    }.should == [true, true, nil, nil, nil, nil, nil, false, false]
+  end
+
+  it "compare values returned by block with 0" do
+    EnumerableSpecs::Numerous.new.sort { |n, m| -(n+m) * (n <=> m) }.should == [6, 5, 4, 3, 2, 1]
+    EnumerableSpecs::Numerous.new.sort { |n, m|
+      EnumerableSpecs::ComparableWithFixnum.new(-(n+m) * (n <=> m))
+    }.should == [6, 5, 4, 3, 2, 1]
+    lambda {
+      EnumerableSpecs::Numerous.new.sort { |n, m| (n <=> m).to_s }
+    }.should raise_error(ArgumentError)
+  end
+
+  it "raises an error if objects can't be compared" do
+    a=EnumerableSpecs::Numerous.new(EnumerableSpecs::Uncomparable.new, EnumerableSpecs::Uncomparable.new)
+    lambda {a.sort}.should raise_error(ArgumentError)
+  end
+end
+require File.expand_path('../../../../spec_helper', __FILE__)
+require File.expand_path('../../../../shared/complex/numeric/real', __FILE__)
+
+ruby_version_is ""..."1.9" do
+
+  require 'complex'
+  require 'rational'
+
+  describe "Numeric#real" do
+    it_behaves_like(:numeric_real, :real)
+  end
+end
+require File.expand_path('../../../spec_helper', __FILE__)
+require 'bigdecimal'
+
+describe "BigDecimal#<=>" do
+  before(:each) do
+    @zero = BigDecimal("0")
+    @zero_pos = BigDecimal("+0")
+    @zero_neg = BigDecimal("-0")
+    @mixed = BigDecimal("1.23456789")
+    @mixed_big = BigDecimal("1.23456789E100")
+    @pos_int = BigDecimal("2E5555")
+    @neg_int = BigDecimal("-2E5555")
+    @pos_frac = BigDecimal("2E-9999")
+    @neg_frac = BigDecimal("-2E-9999")
+
+    @int_mock = mock('123')
+    class << @int_mock
+      def coerce(other)
+        return [other, BigDecimal('123')]
+      end
+      def >= (other)
+        BigDecimal('123') >= other
+      end
+    end
+
+    @values = [@mixed, @pos_int, @neg_int, @pos_frac, @neg_frac,
+      -2**32, -2**31, -2**30, -2**16, -2**8, -100, -10, -1,
+      @zero , 1, 2, 10, 2**8, 2**16, 2**32, @int_mock, @zero_pos, @zero_neg]
+
+    @infinity = BigDecimal("Infinity")
+    @infinity_neg = BigDecimal("-Infinity")
+    @nan = BigDecimal("NaN")
+  end
+
+
+  it "returns 0 if a == b" do
+    (@pos_int <=> @pos_int).should == 0
+    (@neg_int <=> @neg_int).should == 0
+    (@pos_frac <=> @pos_frac).should == 0
+    (@neg_frac <=> @neg_frac).should == 0
+    (@zero <=> @zero).should == 0
+    (@infinity <=> @infinity).should == 0
+    (@infinity_neg <=> @infinity_neg).should == 0
+  end
+
+  it "returns 1 if a > b" do
+    (@pos_int <=> @neg_int).should == 1
+    (@pos_frac <=> @neg_frac).should == 1
+    (@pos_frac <=> @zero).should == 1
+    @values.each { |val|
+      (@infinity <=> val).should == 1
+    }
+  end
+
+  it "returns -1 if a < b" do
+    (@zero <=> @pos_frac).should == -1
+    (@neg_int <=> @pos_frac).should == -1
+    (@pos_frac <=> @pos_int).should == -1
+    @values.each { |val|
+      (@infinity_neg <=> val).should == -1
+    }
+  end
+
+  it "returns nil if NaN is involved" do
+    @values += [@infinity, @infinity_neg, @nan]
+    @values << nil
+    @values << Object.new
+    @values.each { |val|
+      (@nan <=> val).should == nil
+    }
+  end
+  
+  it "returns nil if the argument is nil" do
+    (@zero <=> nil).should == nil
+    (@infinity <=> nil).should == nil
+    (@infinity_neg <=> nil).should == nil
+    (@mixed <=> nil).should == nil
+    (@pos_int <=> nil).should == nil
+    (@neg_frac <=> nil).should == nil
+  end
+end
+require 'bundler/shared_helpers'
+
+if Bundler::SharedHelpers.in_bundle?
+  require 'bundler'
+  begin
+    Bundler.setup
+  rescue Bundler::BundlerError => e
+    puts "\e[31m#{e.message}\e[0m"
+    puts e.backtrace.join("\n") if ENV["DEBUG"]
+    exit e.status_code
+  end
+
+  # Add bundler to the load path after disabling system gems
+  bundler_lib = File.expand_path("../..", __FILE__)
+  $LOAD_PATH.unshift(bundler_lib) unless $LOAD_PATH.include?(bundler_lib)
+end
+require File.expand_path(File.dirname(__FILE__) + '/spec_helper')
+
+class MockDecoder; end
+
+describe "MultiXml" do
+  context "Parsers" do
+    it "should default to the best available gem" do
+      pending
+      MultiXml.parser.name.should == 'MultiXml::Parsers::Rexml'
+      require 'nokogiri'
+      MultiXml.parser.name.should == 'MultiXml::Parsers::Nokogiri'
+      require 'libxml'
+      MultiXml.parser.name.should == 'MultiXml::Parsers::Libxml'
+    end
+
+    it "should be settable via a symbol" do
+      MultiXml.parser = :libxml
+      MultiXml.parser.name.should == 'MultiXml::Parsers::Libxml'
+    end
+
+    it "should be settable via a class" do
+      MultiXml.parser = MockDecoder
+      MultiXml.parser.name.should == 'MockDecoder'
+    end
+  end
+
+  Dir.glob('lib/multi_xml/parsers/**/*.rb').map{|file| File.basename(file, ".rb").split('_').map{|s| s.capitalize}.join('')}.each do |parser|
+    context "Parsers::#{parser}" do
+      before do
+        begin
+          MultiXml.parser = parser
+        rescue LoadError
+          pending "Parser #{parser} couldn't be loaded"
+        end
+      end
+
+      describe ".parse" do
+        context "a blank string" do
+          before do
+            @xml = ''
+          end
+
+          it "should return an empty Hash" do
+            MultiXml.parse(@xml).should == {}
+          end
+        end
+
+        context "a whitespace string" do
+          before do
+            @xml = ' '
+          end
+
+          it "should return an empty Hash" do
+            MultiXml.parse(@xml).should == {}
+          end
+        end
+
+        context "an invalid XML document" do
+          before do
+            @xml = '<open></close>'
+          end
+
+          it "should raise MultiXml::ParseError" do
+            lambda do
+              MultiXml.parse(@xml)
+            end.should raise_error(MultiXml::ParseError)
+          end
+        end
+
+        context "a valid XML document" do
+          before do
+            @xml = '<user/>'
+          end
+
+          it "should parse correctly" do
+            MultiXml.parse(@xml).should == {'user' => nil}
+          end
+
+          context "with CDATA" do
+            before do
+              @xml = '<user><![CDATA[Erik Michaels-Ober]]></user>'
+            end
+
+            it "should return the correct CDATA" do
+              MultiXml.parse(@xml)['user'].should == "Erik Michaels-Ober"
+            end
+          end
+
+          context "with content" do
+            before do
+              @xml = '<user>Erik Michaels-Ober</user>'
+            end
+
+            it "should return the correct content" do
+              MultiXml.parse(@xml)['user'].should == "Erik Michaels-Ober"
+            end
+          end
+
+          context "with an attribute" do
+            before do
+              @xml = '<user name="Erik Michaels-Ober"/>'
+            end
+
+            it "should return the correct attribute" do
+              MultiXml.parse(@xml)['user']['name'].should == "Erik Michaels-Ober"
+            end
+          end
+
+          context "with multiple attributes" do
+            before do
+              @xml = '<user name="Erik Michaels-Ober" screen_name="sferik"/>'
+            end
+
+            it "should return the correct attributes" do
+              MultiXml.parse(@xml)['user']['name'].should == "Erik Michaels-Ober"
+              MultiXml.parse(@xml)['user']['screen_name'].should == "sferik"
+            end
+          end
+
+          context "with :symbolize_keys => true" do
+            before do
+              @xml = '<user><name>Erik Michaels-Ober</name></user>'
+            end
+
+            it "should symbolize keys" do
+              MultiXml.parse(@xml, :symbolize_keys => true).should == {:user => {:name => "Erik Michaels-Ober"}}
+            end
+          end
+
+          context "when value is true" do
+            before do
+              pending
+              @xml = '<tag>true</tag>'
+            end
+
+            it "should return true" do
+              MultiXml.parse(@xml)['tag'].should be_true
+            end
+          end
+
+          context "when value is false" do
+            before do
+              pending
+              @xml = '<tag>false</tag>'
+            end
+
+            it "should return false" do
+              MultiXml.parse(@xml)['tag'].should be_false
+            end
+          end
+
+          context "when key is id" do
+            before do
+              pending
+              @xml = '<id>1</id>'
+            end
+
+            it "should return a Fixnum" do
+              MultiXml.parse(@xml)['id'].should be_a(Fixnum)
+            end
+
+            it "should return the correct number" do
+              MultiXml.parse(@xml)['id'].should == 1
+            end
+          end
+
+          context "when key contains _id" do
+            before do
+              pending
+              @xml = '<tag_id>1</tag_id>'
+            end
+
+            it "should return a Fixnum" do
+              MultiXml.parse(@xml)['tag_id'].should be_a(Fixnum)
+            end
+
+            it "should return the correct number" do
+              MultiXml.parse(@xml)['tag_id'].should == 1
+            end
+          end
+
+          context "with an attribute type=\"boolean\"" do
+            %w(true false).each do |boolean|
+              context "when #{boolean}" do
+                it "should return #{boolean}" do
+                  xml = "<tag type=\"boolean\">#{boolean}</tag>"
+                  MultiXml.parse(xml)['tag'].should instance_eval("be_#{boolean}")
+                end
+              end
+            end
+
+            context "when 1" do
+              before do
+                @xml = '<tag type="boolean">1</tag>'
+              end
+
+              it "should return true" do
+                MultiXml.parse(@xml)['tag'].should be_true
+              end
+            end
+
+            context "when 0" do
+              before do
+                @xml = '<tag type="boolean">0</tag>'
+              end
+
+              it "should return false" do
+                MultiXml.parse(@xml)['tag'].should be_false
+              end
+            end
+          end
+
+          context "with an attribute type=\"integer\"" do
+            context "with a positive integer" do
+              before do
+                @xml = '<tag type="integer">1</tag>'
+              end
+
+              it "should return a Fixnum" do
+                MultiXml.parse(@xml)['tag'].should be_a(Fixnum)
+              end
+
+              it "should return a positive number" do
+                MultiXml.parse(@xml)['tag'].should > 0
+              end
+
+              it "should return the correct number" do
+                MultiXml.parse(@xml)['tag'].should == 1
+              end
+            end
+
+            context "with a negative integer" do
+              before do
+                @xml = '<tag type="integer">-1</tag>'
+              end
+
+              it "should return a Fixnum" do
+                MultiXml.parse(@xml)['tag'].should be_a(Fixnum)
+              end
+
+              it "should return a negative number" do
+                MultiXml.parse(@xml)['tag'].should < 0
+              end
+
+              it "should return the correct number" do
+                MultiXml.parse(@xml)['tag'].should == -1
+              end
+            end
+          end
+
+          context "with an attribute type=\"string\"" do
+            before do
+              @xml = '<tag type="string"></tag>'
+            end
+
+            it "should return a String" do
+              MultiXml.parse(@xml)['tag'].should be_a(String)
+            end
+
+            it "should return the correct string" do
+              MultiXml.parse(@xml)['tag'].should == ""
+            end
+          end
+
+          context "with an attribute type=\"date\"" do
+            before do
+              @xml = '<tag type="date">1970-01-01</tag>'
+            end
+
+            it "should return a Date" do
+              MultiXml.parse(@xml)['tag'].should be_a(Date)
+            end
+
+            it "should return the correct date" do
+              MultiXml.parse(@xml)['tag'].should == Date.parse('1970-01-01')
+            end
+          end
+
+          context "with an attribute type=\"datetime\"" do
+            before do
+              @xml = '<tag type="datetime">1970-01-01 00:00</tag>'
+            end
+
+            it "should return a Time" do
+              MultiXml.parse(@xml)['tag'].should be_a(Time)
+            end
+
+            it "should return the correct time" do
+              MultiXml.parse(@xml)['tag'].should == Time.parse('1970-01-01 00:00')
+            end
+          end
+
+          context "with an attribute type=\"dateTime\"" do
+            before do
+              @xml = '<tag type="datetime">1970-01-01 00:00</tag>'
+            end
+
+            it "should return a Time" do
+              MultiXml.parse(@xml)['tag'].should be_a(Time)
+            end
+
+            it "should return the correct time" do
+              MultiXml.parse(@xml)['tag'].should == Time.parse('1970-01-01 00:00')
+            end
+          end
+
+          context "with an attribute type=\"double\"" do
+            before do
+              @xml = '<tag type="double">3.14159265358979</tag>'
+            end
+
+            it "should return a Float" do
+              MultiXml.parse(@xml)['tag'].should be_a(Float)
+            end
+
+            it "should return the correct number" do
+              MultiXml.parse(@xml)['tag'].should == 3.14159265358979
+            end
+          end
+
+          context "with an attribute type=\"decimal\"" do
+            before do
+              @xml = '<tag type="decimal">3.14159265358979323846264338327950288419716939937510</tag>'
+            end
+
+            it "should return a BigDecimal" do
+              MultiXml.parse(@xml)['tag'].should be_a(BigDecimal)
+            end
+
+            it "should return the correct number" do
+              MultiXml.parse(@xml)['tag'].should == 3.14159265358979323846264338327950288419716939937510
+            end
+          end
+
+          context "with an attribute type=\"base64Binary\"" do
+            before do
+              @xml = '<tag type="base64Binary">aW1hZ2UucG5n</tag>'
+            end
+
+            it "should return a String" do
+              MultiXml.parse(@xml)['tag'].should be_a(String)
+            end
+
+            it "should return the correct string" do
+              MultiXml.parse(@xml)['tag'].should == "image.png"
+            end
+          end
+
+          context "with an attribute type=\"yaml\"" do
+            before do
+              @xml = "<tag type=\"yaml\">--- \n1: should return an integer\n:message: Have a nice day\narray: \n- should-have-dashes: true\n  should_have_underscores: true\n</tag>"
+            end
+
+            it "should return a Hash" do
+              MultiXml.parse(@xml)['tag'].should be_a(Hash)
+            end
+
+            it "should return the correctly parsed YAML" do
+              MultiXml.parse(@xml)['tag'].should == {:message => "Have a nice day", 1 => "should return an integer", "array" => [{"should-have-dashes" => true, "should_have_underscores" => true}]}
+            end
+          end
+
+          context "with an attribute type=\"file\"" do
+            before do
+              @xml = '<tag type="file" name="data.txt" content_type="text/plain">ZGF0YQ==</tag>'
+            end
+
+            it "should return a StringIO" do
+              MultiXml.parse(@xml)['tag'].should be_a(StringIO)
+            end
+
+            it "should be decoded correctly" do
+              MultiXml.parse(@xml)['tag'].string.should == 'data'
+            end
+
+            it "should have the correct file name" do
+              MultiXml.parse(@xml)['tag'].original_filename.should == 'data.txt'
+            end
+
+            it "should have the correct content type" do
+              MultiXml.parse(@xml)['tag'].content_type.should == 'text/plain'
+            end
+
+            context "with missing name and content type" do
+              before do
+                @xml = '<tag type="file">ZGF0YQ==</tag>'
+              end
+
+              it "should return a StringIO" do
+                MultiXml.parse(@xml)['tag'].should be_a(StringIO)
+              end
+
+              it "should be decoded correctly" do
+                MultiXml.parse(@xml)['tag'].string.should == 'data'
+              end
+
+              it "should have the default file name" do
+                MultiXml.parse(@xml)['tag'].original_filename.should == 'untitled'
+              end
+
+              it "should have the default content type" do
+                MultiXml.parse(@xml)['tag'].content_type.should == 'application/octet-stream'
+              end
+            end
+          end
+
+          context "with an attribute type=\"array\"" do
+            before do
+              @xml = '<users type="array"><user>Erik Michaels-Ober</user><user>Wynn Netherland</user></users>'
+            end
+
+            it "should return an Array" do
+              MultiXml.parse(@xml)['users'].should be_a(Array)
+            end
+
+            it "should return the correct array" do
+              MultiXml.parse(@xml)['users'].should == ["Erik Michaels-Ober", "Wynn Netherland"]
+            end
+          end
+
+          %w(integer boolean date datetime yaml file).each do |type|
+            context "with an empty attribute type=\"#{type}\"" do
+              before do
+                @xml = "<tag type=\"#{type}\"/>"
+              end
+
+              it "should return nil" do
+                MultiXml.parse(@xml)['tag'].should be_nil
+              end
+            end
+          end
+
+          context "with an empty attribute type=\"array\"" do
+            before do
+              @xml = '<tag type="array"/>'
+            end
+
+            it "should return an empty Array" do
+              MultiXml.parse(@xml)['tag'].should == []
+            end
+
+            context "with whitespace" do
+              before do
+                @xml = '<tag type="array"> </tag>'
+              end
+
+              it "should return an empty Array" do
+                MultiXml.parse(@xml)['tag'].should == []
+              end
+            end
+          end
+
+          context "with XML entities" do
+            before do
+              @xml_entities = {
+                "<" => "&lt;",
+                ">" => "&gt;",
+                '"' => "&quot;",
+                "'" => "&apos;",
+                "&" => "&amp;"
+              }
+            end
+
+            context "in content" do
+              it "should return unescaped XML entities" do
+                @xml_entities.each do |key, value|
+                  xml = "<tag>#{value}</tag>"
+                  MultiXml.parse(xml)['tag'].should == key
+                end
+              end
+            end
+
+            context "in attribute" do
+              it "should return unescaped XML entities" do
+                @xml_entities.each do |key, value|
+                  xml = "<tag attribute=\"#{value}\"/>"
+                  MultiXml.parse(xml)['tag']['attribute'].should == key
+                end
+              end
+            end
+          end
+
+          context "with dasherized tag" do
+            before do
+              @xml = '<tag-1/>'
+            end
+
+            it "should return undasherize tag" do
+              MultiXml.parse(@xml).keys.should include('tag_1')
+            end
+          end
+
+          context "with dasherized attribute" do
+            before do
+              @xml = '<tag attribute-1="1"></tag>'
+            end
+
+            it "should return undasherize attribute" do
+              MultiXml.parse(@xml)['tag'].keys.should include('attribute_1')
+            end
+          end
+
+          context "with children" do
+            context "with attributes" do
+              before do
+                @xml = '<users><user name="Erik Michaels-Ober"/></users>'
+              end
+
+              it "should return the correct attributes" do
+                MultiXml.parse(@xml)['users']['user']['name'].should == "Erik Michaels-Ober"
+              end
+            end
+
+            context "with text" do
+              before do
+                @xml = '<user><name>Erik Michaels-Ober</name></user>'
+              end
+
+              it "should return the correct text" do
+                MultiXml.parse(@xml)['user']['name'].should == "Erik Michaels-Ober"
+              end
+            end
+
+            context "with an unrecognized attribute type" do
+              before do
+                @xml = '<user type="admin"><name>Erik Michaels-Ober</name></user>'
+              end
+
+              it "should pass through the type" do
+                MultiXml.parse(@xml)['user']['type'].should == 'admin'
+              end
+            end
+
+            context "with newlines and whitespace" do
+              before do
+                @xml = <<-XML
+                  <user>
+                    <name>Erik Michaels-Ober</name>
+                  </user>
+                XML
+              end
+
+              it "should parse correctly" do
+                MultiXml.parse(@xml).should == {"user" => {"name" => "Erik Michaels-Ober"}}
+              end
+            end
+
+            # Babies having babies
+            context "with children" do
+              before do
+                @xml = '<users><user name="Erik Michaels-Ober"><status text="Hello"/></user></users>'
+              end
+
+              it "should parse correctly" do
+                MultiXml.parse(@xml).should == {"users" => {"user" => {"name" => "Erik Michaels-Ober", "status" => {"text" => "Hello"}}}}
+              end
+            end
+          end
+
+          context "with sibling children" do
+            before do
+              @xml = '<users><user>Erik Michaels-Ober</user><user>Wynn Netherland</user></users>'
+            end
+
+            it "should return an Array" do
+              MultiXml.parse(@xml)['users']['user'].should be_a(Array)
+            end
+
+            it "should parse correctly" do
+              MultiXml.parse(@xml).should == {"users" => {"user" => ["Erik Michaels-Ober", "Wynn Netherland"]}}
+            end
+          end
+        end
+      end
+    end
+  end
+end
+#--
+#
+# Author:: Francis Cianfrocca (gmail: blackhedd)
+# Homepage::  http://rubyeventmachine.com
+# Date:: 15 November 2006
+# 
+# See EventMachine and EventMachine::Connection for documentation and
+# usage examples.
+#
+#----------------------------------------------------------------------------
+#
+# Copyright (C) 2006-07 by Francis Cianfrocca. All Rights Reserved.
+# Gmail: blackhedd
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of either: 1) the GNU General Public License
+# as published by the Free Software Foundation; either version 2 of the
+# License, or (at your option) any later version; or 2) Ruby's License.
+# 
+# See the file COPYING for complete licensing information.
+#
+#---------------------------------------------------------------------------
+#
+# 
+# 
+
+module EventMachine
+  module Protocols
+    # A protocol that handles line-oriented data with interspersed binary text.
+    #
+    # This version is optimized for performance. See EventMachine::Protocols::LineText2
+    # for a version which is optimized for correctness with regard to binary text blocks
+    # that can switch back to line mode.
+    class LineAndTextProtocol < Connection
+      MaxLineLength = 16*1024
+      MaxBinaryLength = 32*1024*1024
+
+      def initialize *args
+        super
+        lbp_init_line_state
+      end
+      def receive_data data
+        if @lbp_mode == :lines
+          begin
+            @lpb_buffer.extract(data).each do |line| 
+              receive_line(line.chomp) if respond_to?(:receive_line)
+            end
+          rescue Exception
+            receive_error('overlength line') if respond_to?(:receive_error)
+            close_connection
+            return
+          end
+        else
+          if @lbp_binary_limit > 0
+            wanted = @lbp_binary_limit - @lbp_binary_bytes_received
+            chunk = nil
+            if data.length > wanted
+              chunk = data.slice!(0...wanted)
+            else
+              chunk = data
+              data = ""
+            end
+            @lbp_binary_buffer[@lbp_binary_bytes_received...(@lbp_binary_bytes_received+chunk.length)] = chunk
+            @lbp_binary_bytes_received += chunk.length
+            if @lbp_binary_bytes_received == @lbp_binary_limit
+              receive_binary_data(@lbp_binary_buffer) if respond_to?(:receive_binary_data)
+              lbp_init_line_state
+            end
+            receive_data(data) if data.length > 0
+          else
+            receive_binary_data(data) if respond_to?(:receive_binary_data)
+            data = ""
+          end
+        end
+      end
+
+      def unbind
+        if @lbp_mode == :binary and @lbp_binary_limit > 0
+          if respond_to?(:receive_binary_data)
+            receive_binary_data( @lbp_binary_buffer[0...@lbp_binary_bytes_received] )
+          end
+        end
+      end
+
+      # Set up to read the supplied number of binary bytes.
+      # This recycles all the data currently waiting in the line buffer, if any.
+      # If the limit is nil, then ALL subsequent data will be treated as binary
+      # data and passed to the upstream protocol handler as we receive it.
+      # If a limit is given, we'll hold the incoming binary data and not
+      # pass it upstream until we've seen it all, or until there is an unbind
+      # (in which case we'll pass up a partial).
+      # Specifying nil for the limit (the default) means there is no limit.
+      # Specifiyng zero for the limit will cause an immediate transition back to line mode.
+      #
+      def set_binary_mode size = nil
+        if @lbp_mode == :lines
+          if size == 0
+            receive_binary_data("") if respond_to?(:receive_binary_data)
+            # Do no more work here. Stay in line mode and keep consuming data.
+          else
+            @lbp_binary_limit = size.to_i # (nil will be stored as zero)
+            if @lbp_binary_limit > 0
+              raise "Overlength" if @lbp_binary_limit > MaxBinaryLength # arbitrary sanity check
+              @lbp_binary_buffer = "\0" * @lbp_binary_limit
+              @lbp_binary_bytes_received = 0
+            end
+
+            @lbp_mode = :binary
+            receive_data @lpb_buffer.flush
+          end
+        else
+          raise "invalid operation"
+        end
+      end
+
+      #--
+      # For internal use, establish protocol baseline for handling lines.
+      def lbp_init_line_state
+        @lpb_buffer = BufferedTokenizer.new("\n", MaxLineLength)
+        @lbp_mode = :lines
+      end
+      private :lbp_init_line_state
+    end
+  end
+end
+#
+#  tkextlib/bwidget/arrowbutton.rb
+#                               by Hidetoshi NAGAI (nagai@ai.kyutech.ac.jp)
+#
+
+require 'tk'
+require 'tkextlib/bwidget.rb'
+require 'tkextlib/bwidget/button'
+
+module Tk
+  module BWidget
+    class ArrowButton < Tk::BWidget::Button
+    end
+  end
+end
+
+class Tk::BWidget::ArrowButton
+  TkCommandNames = ['ArrowButton'.freeze].freeze
+  WidgetClassName = 'ArrowButton'.freeze
+  WidgetClassNames[WidgetClassName] ||= self
+end
+require 'rubygems/test_case'
+require 'rubygems/commands/server_command'
+
+class TestGemCommandsServerCommand < Gem::TestCase
+
+  def setup
+    super
+
+    @cmd = Gem::Commands::ServerCommand.new
+  end
+
+  def test_handle_options
+    @cmd.send :handle_options, %w[-p 8808 --no-daemon]
+
+    assert_equal false, @cmd.options[:daemon]
+    assert_equal [], @cmd.options[:gemdir]
+    assert_equal 8808, @cmd.options[:port]
+
+    @cmd.send :handle_options, %w[-p 9999 -d /nonexistent --daemon]
+
+    assert_equal true, @cmd.options[:daemon]
+    assert_equal [File.expand_path('/nonexistent')], @cmd.options[:gemdir]
+    assert_equal 9999, @cmd.options[:port]
+  end
+
+  def test_handle_options_gemdir
+    @cmd.send :handle_options, %w[--dir a --dir b]
+
+    assert_equal [File.expand_path('a'), File.expand_path('b')],
+                 @cmd.options[:gemdir]
+  end
+
+  def test_handle_options_port
+    @cmd.send :handle_options, %w[-p 0]
+    assert_equal 0, @cmd.options[:port]
+
+    @cmd.send :handle_options, %w[-p 65535]
+    assert_equal 65535, @cmd.options[:port]
+
+    @cmd.send :handle_options, %w[-p http]
+    assert_equal 80, @cmd.options[:port]
+
+    e = assert_raises OptionParser::InvalidArgument do
+      @cmd.send :handle_options, %w[-p nonexistent]
+    end
+
+    assert_equal 'invalid argument: -p nonexistent: no such named service',
+                 e.message
+
+    e = assert_raises OptionParser::InvalidArgument do
+      @cmd.send :handle_options, %w[-p 65536]
+    end
+
+    assert_equal 'invalid argument: -p 65536: not a port number',
+                 e.message
+  end
+
+end
+
+require File.expand_path('../../../spec_helper', __FILE__)
+require 'set'
+
+describe "Set#superset?" do
+  before(:each) do
+    @set = Set[1, 2, 3, 4]
+  end
+
+  it "returns true if passed a Set that equals self or self is a proper superset of" do
+    @set.superset?(@set).should be_true
+    Set[].superset?(Set[]).should be_true
+
+    @set.superset?(Set[]).should be_true
+    Set[1, 2, 3].superset?(Set[]).should be_true
+    Set["a", :b, ?c].superset?(Set[]).should be_true
+
+    @set.superset?(Set[1, 2, 3]).should be_true
+    @set.superset?(Set[1, 3]).should be_true
+    @set.superset?(Set[1, 2]).should be_true
+    @set.superset?(Set[1]).should be_true
+    
+    @set.superset?(Set[5]).should be_false
+    @set.superset?(Set[1, 5]).should be_false
+    @set.superset?(Set[nil]).should be_false
+    @set.superset?(Set["test"]).should be_false
+  end
+  
+  it "raises an ArgumentError when passed a non-Set" do
+    lambda { Set[].superset?([]) }.should raise_error(ArgumentError)
+    lambda { Set[].superset?(1) }.should raise_error(ArgumentError)
+    lambda { Set[].superset?("test") }.should raise_error(ArgumentError)
+    lambda { Set[].superset?(Object.new) }.should raise_error(ArgumentError)
+  end
+end
+require 'active_support/core_ext/time/zones'
+
+class DateTime
+  # Returns the simultaneous time in <tt>Time.zone</tt>.
+  #
+  #   Time.zone = 'Hawaii'             # => 'Hawaii'
+  #   DateTime.new(2000).in_time_zone  # => Fri, 31 Dec 1999 14:00:00 HST -10:00
+  #
+  # This method is similar to Time#localtime, except that it uses <tt>Time.zone</tt> as the local zone
+  # instead of the operating system's time zone.
+  #
+  # You can also pass in a TimeZone instance or string that identifies a TimeZone as an argument,
+  # and the conversion will be based on that zone instead of <tt>Time.zone</tt>.
+  #
+  #   DateTime.new(2000).in_time_zone('Alaska')  # => Fri, 31 Dec 1999 15:00:00 AKST -09:00
+  def in_time_zone(zone = ::Time.zone)
+    return self unless zone
+
+    ActiveSupport::TimeWithZone.new(utc? ? self : getutc, ::Time.__send__(:get_zone, zone))
+  end
+end
+# I18n locale fallbacks are useful when you want your application to use
+# translations from other locales when translations for the current locale are
+# missing. E.g. you might want to use :en translations when translations in
+# your applications main locale :de are missing.
+#
+# To enable locale fallbacks you can simply include the Fallbacks module to
+# the Simple backend - or whatever other backend you are using:
+#
+#   I18n::Backend::Simple.send(:include, I18n::Backend::Fallbacks)
+module I18n
+  @@fallbacks = nil
+
+  class << self
+    # Returns the current fallbacks implementation. Defaults to +I18n::Locale::Fallbacks+.
+    def fallbacks
+      @@fallbacks ||= I18n::Locale::Fallbacks.new
+    end
+
+    # Sets the current fallbacks implementation. Use this to set a different fallbacks implementation.
+    def fallbacks=(fallbacks)
+      @@fallbacks = fallbacks
+    end
+  end
+
+  module Backend
+    module Fallbacks
+      # Overwrites the Base backend translate method so that it will try each
+      # locale given by I18n.fallbacks for the given locale. E.g. for the
+      # locale :"de-DE" it might try the locales :"de-DE", :de and :en
+      # (depends on the fallbacks implementation) until it finds a result with
+      # the given options. If it does not find any result for any of the
+      # locales it will then raise a MissingTranslationData exception as
+      # usual.
+      #
+      # The default option takes precedence over fallback locales
+      # only when it's a Symbol. When the default contains a String or a Proc
+      # it is evaluated last after all the fallback locales have been tried.
+      def translate(locale, key, options = {})
+        return super if options[:fallback]
+        default = extract_string_or_lambda_default!(options) if options[:default]
+
+        options[:fallback] = true
+        I18n.fallbacks[locale].each do |fallback|
+          begin
+            result = super(fallback, key, options)
+            return result unless result.nil?
+          rescue I18n::MissingTranslationData
+          end
+        end
+        options.delete(:fallback)
+
+        return super(locale, nil, options.merge(:default => default)) if default
+        raise(I18n::MissingTranslationData.new(locale, key, options))
+      end
+
+      def extract_string_or_lambda_default!(options)
+        defaults = Array(options[:default])
+        if index = find_first_string_or_lambda_default(defaults)
+          options[:default] = defaults[0, index]
+          defaults[index]
+        end
+      end
+
+      def find_first_string_or_lambda_default(defaults)
+        defaults.each_with_index { |default, ix| return ix if String === default || Proc === default }
+        nil
+      end
+    end
+  end
+end
+require File.join(File.dirname(__FILE__), 'make_fasta_output')
+prepare_fasta_output(2_500_000)
+require File.expand_path('../../../spec_helper', __FILE__)
+require 'cgi'
+
+describe "CGI.unescapeElement when passed String, elements, ..." do
+  it "unescapes only the tags of the passed elements in the passed String" do
+    res = CGI.unescapeElement("&lt;BR&gt;&lt;A HREF=&quot;url&quot;&gt;&lt;/A&gt;", "A", "IMG")
+    res.should == '&lt;BR&gt;<A HREF="url"></A>'
+    
+    res = CGI.unescapeElement('&lt;BR&gt;&lt;A HREF=&quot;url&quot;&gt;&lt;/A&gt;', ["A", "IMG"])
+    res.should == '&lt;BR&gt;<A HREF="url"></A>'
+  end
+
+  it "is case-insensitive" do
+    res = CGI.unescapeElement("&lt;BR&gt;&lt;A HREF=&quot;url&quot;&gt;&lt;/A&gt;", "a", "img")
+    res.should == '&lt;BR&gt;<A HREF="url"></A>'
+
+    res = CGI.unescapeElement("&lt;br&gt;&lt;a href=&quot;url&quot;&gt;&lt;/a&gt;", "A", "IMG")
+    res.should == '&lt;br&gt;<a href="url"></a>'
+  end
+end
+require File.expand_path(File.join(File.dirname(__FILE__), "spec_helper"))
+
+describe FFI::Struct, ' with inline callback functions' do
+  it 'should be able to define inline callback field' do
+    module CallbackMember
+      extend FFI::Library
+      ffi_lib TestLibrary::PATH
+      DUMMY_CB = callback :dummy_cb, [ :int ], :int
+      class TestStruct < FFI::Struct
+        layout \
+          :add, callback([ :int, :int ], :int),
+          :sub, callback([ :int, :int ], :int),
+          :cb_with_cb_parameter, callback([ DUMMY_CB, :int ], :int)
+      end
+      attach_function :struct_call_add_cb, [TestStruct, :int, :int], :int
+      attach_function :struct_call_sub_cb, [TestStruct, :int, :int], :int
+    end
+  end
+  it 'should take methods as callbacks' do
+    module CallbackMember
+      extend FFI::Library
+      ffi_lib TestLibrary::PATH
+      class TestStruct < FFI::Struct
+        layout \
+          :add, callback([ :int, :int ], :int),
+          :sub, callback([ :int, :int ], :int)
+      end
+      attach_function :struct_call_add_cb, [TestStruct, :int, :int], :int
+      attach_function :struct_call_sub_cb, [TestStruct, :int, :int], :int
+    end
+    module StructCallbacks
+      def self.add a, b
+        a+b
+      end
+    end
+
+    ts = CallbackMember::TestStruct.new
+    ts[:add] = StructCallbacks.method(:add)
+
+    CallbackMember.struct_call_add_cb(ts, 1, 2).should == 3
+  end
+
+  it 'should return callable object from []' do
+    module CallbackMember
+      extend FFI::Library
+      ffi_lib TestLibrary::PATH
+      class TestStruct < FFI::Struct
+        layout \
+          :add, callback([ :int, :int ], :int),
+          :sub, callback([ :int, :int ], :int)
+      end
+      attach_function :struct_call_add_cb, [TestStruct, :int, :int], :int
+      attach_function :struct_call_sub_cb, [TestStruct, :int, :int], :int
+    end
+
+    s = CallbackMember::TestStruct.new
+    add = Proc.new { |a,b| a+b}
+    s[:add] = add
+    fn = s[:add]
+    fn.respond_to?(:call).should be_true
+    fn.call(1, 2).should == 3
+  end
+end
+
+module TZInfo
+  module Definitions
+    module Asia
+      module Gaza
+        include TimezoneDefinition
+        
+        timezone 'Asia/Gaza' do |tz|
+          tz.offset :o0, 8272, 0, :LMT
+          tz.offset :o1, 7200, 0, :EET
+          tz.offset :o2, 7200, 3600, :EET
+          tz.offset :o3, 7200, 3600, :EEST
+          tz.offset :o4, 7200, 0, :IST
+          tz.offset :o5, 7200, 3600, :IDT
+          
+          tz.transition 1900, 9, :o1, 13042584383, 5400
+          tz.transition 1940, 5, :o2, 29157377, 12
+          tz.transition 1942, 10, :o1, 19445315, 8
+          tz.transition 1943, 4, :o2, 4861631, 2
+          tz.transition 1943, 10, :o1, 19448235, 8
+          tz.transition 1944, 3, :o2, 29174177, 12
+          tz.transition 1944, 10, :o1, 19451163, 8
+          tz.transition 1945, 4, :o2, 29178737, 12
+          tz.transition 1945, 10, :o1, 58362251, 24
+          tz.transition 1946, 4, :o2, 4863853, 2
+          tz.transition 1946, 10, :o1, 19457003, 8
+          tz.transition 1957, 5, :o3, 29231621, 12
+          tz.transition 1957, 9, :o1, 19488899, 8
+          tz.transition 1958, 4, :o3, 29235893, 12
+          tz.transition 1958, 9, :o1, 19491819, 8
+          tz.transition 1959, 4, :o3, 58480547, 24
+          tz.transition 1959, 9, :o1, 4873683, 2
+          tz.transition 1960, 4, :o3, 58489331, 24
+          tz.transition 1960, 9, :o1, 4874415, 2
+          tz.transition 1961, 4, :o3, 58498091, 24
+          tz.transition 1961, 9, :o1, 4875145, 2
+          tz.transition 1962, 4, :o3, 58506851, 24
+          tz.transition 1962, 9, :o1, 4875875, 2
+          tz.transition 1963, 4, :o3, 58515611, 24
+          tz.transition 1963, 9, :o1, 4876605, 2
+          tz.transition 1964, 4, :o3, 58524395, 24
+          tz.transition 1964, 9, :o1, 4877337, 2
+          tz.transition 1965, 4, :o3, 58533155, 24
+          tz.transition 1965, 9, :o1, 4878067, 2
+          tz.transition 1966, 4, :o3, 58541915, 24
+          tz.transition 1966, 10, :o1, 4878799, 2
+          tz.transition 1967, 4, :o3, 58550675, 24
+          tz.transition 1967, 6, :o4, 19517171, 8
+          tz.transition 1974, 7, :o5, 142380000
+          tz.transition 1974, 10, :o4, 150843600
+          tz.transition 1975, 4, :o5, 167176800
+          tz.transition 1975, 8, :o4, 178664400
+          tz.transition 1985, 4, :o5, 482277600
+          tz.transition 1985, 9, :o4, 495579600
+          tz.transition 1986, 5, :o5, 516751200
+          tz.transition 1986, 9, :o4, 526424400
+          tz.transition 1987, 4, :o5, 545436000
+          tz.transition 1987, 9, :o4, 558478800
+          tz.transition 1988, 4, :o5, 576540000
+          tz.transition 1988, 9, :o4, 589237200
+          tz.transition 1989, 4, :o5, 609890400
+          tz.transition 1989, 9, :o4, 620773200
+          tz.transition 1990, 3, :o5, 638316000
+          tz.transition 1990, 8, :o4, 651618000
+          tz.transition 1991, 3, :o5, 669765600
+          tz.transition 1991, 8, :o4, 683672400
+          tz.transition 1992, 3, :o5, 701820000
+          tz.transition 1992, 9, :o4, 715726800
+          tz.transition 1993, 4, :o5, 733701600
+          tz.transition 1993, 9, :o4, 747176400
+          tz.transition 1994, 3, :o5, 765151200
+          tz.transition 1994, 8, :o4, 778021200
+          tz.transition 1995, 3, :o5, 796600800
+          tz.transition 1995, 9, :o4, 810075600
+          tz.transition 1995, 12, :o1, 820447200
+          tz.transition 1996, 4, :o3, 828655200
+          tz.transition 1996, 9, :o1, 843170400
+          tz.transition 1997, 4, :o3, 860104800
+          tz.transition 1997, 9, :o1, 874620000
+          tz.transition 1998, 4, :o3, 891554400
+          tz.transition 1998, 9, :o1, 906069600
+          tz.transition 1999, 4, :o3, 924213600
+          tz.transition 1999, 10, :o1, 939934800
+          tz.transition 2000, 4, :o3, 956268000
+          tz.transition 2000, 10, :o1, 971989200
+          tz.transition 2001, 4, :o3, 987717600
+          tz.transition 2001, 10, :o1, 1003438800
+          tz.transition 2002, 4, :o3, 1019167200
+          tz.transition 2002, 10, :o1, 1034888400
+          tz.transition 2003, 4, :o3, 1050616800
+          tz.transition 2003, 10, :o1, 1066338000
+          tz.transition 2004, 4, :o3, 1082066400
+          tz.transition 2004, 9, :o1, 1096581600
+          tz.transition 2005, 4, :o3, 1113516000
+          tz.transition 2005, 10, :o1, 1128380400
+          tz.transition 2006, 3, :o3, 1143842400
+          tz.transition 2006, 9, :o1, 1158872400
+          tz.transition 2007, 3, :o3, 1175378400
+          tz.transition 2007, 9, :o1, 1189638000
+          tz.transition 2008, 3, :o3, 1207000800
+          tz.transition 2008, 8, :o1, 1219964400
+          tz.transition 2009, 3, :o3, 1238104800
+          tz.transition 2009, 9, :o1, 1252018800
+          tz.transition 2010, 3, :o3, 1269640860
+          tz.transition 2010, 8, :o1, 1281474000
+          tz.transition 2011, 3, :o3, 1301090460
+          tz.transition 2011, 9, :o1, 1314918000
+          tz.transition 2012, 3, :o3, 1333144860
+          tz.transition 2012, 9, :o1, 1346972400
+          tz.transition 2013, 3, :o3, 1364594460
+          tz.transition 2013, 9, :o1, 1378422000
+          tz.transition 2014, 3, :o3, 1396044060
+          tz.transition 2014, 9, :o1, 1409871600
+          tz.transition 2015, 3, :o3, 1427493660
+          tz.transition 2015, 9, :o1, 1441321200
+          tz.transition 2016, 3, :o3, 1458943260
+          tz.transition 2016, 9, :o1, 1472770800
+          tz.transition 2017, 3, :o3, 1490392860
+          tz.transition 2017, 8, :o1, 1504220400
+          tz.transition 2018, 3, :o3, 1522447260
+          tz.transition 2018, 9, :o1, 1536274800
+          tz.transition 2019, 3, :o3, 1553896860
+          tz.transition 2019, 9, :o1, 1567724400
+          tz.transition 2020, 3, :o3, 1585346460
+          tz.transition 2020, 9, :o1, 1599174000
+          tz.transition 2021, 3, :o3, 1616796060
+          tz.transition 2021, 9, :o1, 1630623600
+          tz.transition 2022, 3, :o3, 1648245660
+          tz.transition 2022, 9, :o1, 1662073200
+          tz.transition 2023, 3, :o3, 1679695260
+          tz.transition 2023, 8, :o1, 1693522800
+          tz.transition 2024, 3, :o3, 1711749660
+          tz.transition 2024, 9, :o1, 1725577200
+          tz.transition 2025, 3, :o3, 1743199260
+          tz.transition 2025, 9, :o1, 1757026800
+          tz.transition 2026, 3, :o3, 1774648860
+          tz.transition 2026, 9, :o1, 1788476400
+          tz.transition 2027, 3, :o3, 1806098460
+          tz.transition 2027, 9, :o1, 1819926000
+          tz.transition 2028, 3, :o3, 1837548060
+          tz.transition 2028, 8, :o1, 1851375600
+          tz.transition 2029, 3, :o3, 1869602460
+          tz.transition 2029, 9, :o1, 1883430000
+          tz.transition 2030, 3, :o3, 1901052060
+          tz.transition 2030, 9, :o1, 1914879600
+          tz.transition 2031, 3, :o3, 1932501660
+          tz.transition 2031, 9, :o1, 1946329200
+          tz.transition 2032, 3, :o3, 1963951260
+          tz.transition 2032, 9, :o1, 1977778800
+          tz.transition 2033, 3, :o3, 1995400860
+          tz.transition 2033, 9, :o1, 2009228400
+          tz.transition 2034, 3, :o3, 2026850460
+          tz.transition 2034, 8, :o1, 2040678000
+          tz.transition 2035, 3, :o3, 2058904860
+          tz.transition 2035, 9, :o1, 2072732400
+          tz.transition 2036, 3, :o3, 2090354460
+          tz.transition 2036, 9, :o1, 2104182000
+          tz.transition 2037, 3, :o3, 2121804060
+          tz.transition 2037, 9, :o1, 2135631600
+          tz.transition 2038, 3, :o3, 3550333561, 1440
+          tz.transition 2038, 9, :o1, 59176067, 24
+          tz.transition 2039, 3, :o3, 3550857721, 1440
+          tz.transition 2039, 9, :o1, 59184803, 24
+          tz.transition 2040, 3, :o3, 3551391961, 1440
+          tz.transition 2040, 9, :o1, 59193707, 24
+          tz.transition 2041, 3, :o3, 3551916121, 1440
+          tz.transition 2041, 9, :o1, 59202443, 24
+          tz.transition 2042, 3, :o3, 3552440281, 1440
+          tz.transition 2042, 9, :o1, 59211179, 24
+          tz.transition 2043, 3, :o3, 3552964441, 1440
+          tz.transition 2043, 9, :o1, 59219915, 24
+          tz.transition 2044, 3, :o3, 3553488601, 1440
+          tz.transition 2044, 9, :o1, 59228651, 24
+          tz.transition 2045, 3, :o3, 3554012761, 1440
+          tz.transition 2045, 8, :o1, 59237387, 24
+          tz.transition 2046, 3, :o3, 3554547001, 1440
+          tz.transition 2046, 9, :o1, 59246291, 24
+          tz.transition 2047, 3, :o3, 3555071161, 1440
+          tz.transition 2047, 9, :o1, 59255027, 24
+          tz.transition 2048, 3, :o3, 3555595321, 1440
+          tz.transition 2048, 9, :o1, 59263763, 24
+          tz.transition 2049, 3, :o3, 3556119481, 1440
+          tz.transition 2049, 9, :o1, 59272499, 24
+          tz.transition 2050, 3, :o3, 3556643641, 1440
+          tz.transition 2050, 9, :o1, 59281235, 24
+        end
+      end
+    end
+  end
+end
+require File.expand_path('../../spec_helper', __FILE__)
+
+describe "A Iasgn node" do
+  relates "@a = 4" do
+    compile do |g|
+      g.push 4
+      g.set_ivar :@a
+    end
+  end
+
+  relates "@a = *[1]" do
+    # iasgn splat
+  end
+
+  relates <<-ruby do
+      a = 1
+      @a = a
+    ruby
+
+    compile do |g|
+      g.push 1
+      g.set_local 0
+      g.pop
+      g.push_local 0
+      g.set_ivar :@a
+    end
+  end
+end
+maintainer       "SocialMedia.com"
+maintainer_email "operations@socialmedia.com"
+license          "All rights reserved"
+description      "Installs/Configures apache"
+long_description IO.read(File.join(File.dirname(__FILE__), 'README.rdoc'))
+version          "0.1"
+=begin
+= xmlrpc/client.rb
+Copyright (C) 2001, 2002, 2003 by Michael Neumann (mneumann@ntecs.de)
+
+Released under the same term of license as Ruby.
+
+= Classes
+* ((<XMLRPC::Client>))
+* ((<XMLRPC::Client::Proxy>))
+
+
+= XMLRPC::Client
+== Synopsis
+    require "xmlrpc/client"
+
+    server = XMLRPC::Client.new("www.ruby-lang.org", "/RPC2", 80)
+    begin
+      param = server.call("michael.add", 4, 5)
+      puts "4 + 5 = #{param}"
+    rescue XMLRPC::FaultException => e
+      puts "Error:"
+      puts e.faultCode
+      puts e.faultString
+    end
+
+or
+
+    require "xmlrpc/client"
+
+    server = XMLRPC::Client.new("www.ruby-lang.org", "/RPC2", 80)
+    ok, param = server.call2("michael.add", 4, 5)
+    if ok then
+      puts "4 + 5 = #{param}"
+    else
+      puts "Error:"
+      puts param.faultCode
+      puts param.faultString
+    end
+
+== Description
+Class (({XMLRPC::Client})) provides remote procedure calls to a XML-RPC server.
+After setting the connection-parameters with ((<XMLRPC::Client.new>)) which
+creates a new (({XMLRPC::Client})) instance, you can execute a remote procedure
+by sending the ((<call|XMLRPC::Client#call>)) or ((<call2|XMLRPC::Client#call2>))
+message to this new instance. The given parameters indicate which method to
+call on the remote-side and of course the parameters for the remote procedure.
+
+== Class Methods
+--- XMLRPC::Client.new( host=nil, path=nil, port=nil, proxy_host=nil, proxy_port=nil, user=nil, password=nil, use_ssl=false, timeout =nil)
+    Creates an object which represents the remote XML-RPC server on the
+    given host ((|host|)). If the server is CGI-based, ((|path|)) is the
+    path to the CGI-script, which will be called, otherwise (in the
+    case of a standalone server) ((|path|)) should be (({"/RPC2"})).
+    ((|port|)) is the port on which the XML-RPC server listens.
+    If ((|proxy_host|)) is given, then a proxy server listening at
+    ((|proxy_host|)) is used. ((|proxy_port|)) is the port of the
+    proxy server.
+
+    Default values for ((|host|)), ((|path|)) and ((|port|)) are 'localhost', '/RPC2' and
+    '80' respectively using SSL '443'.
+
+    If ((|user|)) and ((|password|)) are given, each time a request is send,
+    a Authorization header is send. Currently only Basic Authentification is
+    implemented no Digest.
+
+    If ((|use_ssl|)) is set to (({true})), comunication over SSL is enabled.
+    Note, that you need the SSL package from RAA installed.
+
+    Parameter ((|timeout|)) is the time to wait for a XML-RPC response, defaults to 30.
+
+--- XMLRPC::Client.new2( uri, proxy=nil, timeout=nil)
+--- XMLRPC::Client.new_from_uri( uri, proxy=nil, timeout=nil)
+:   uri
+    URI specifying protocol (http or https), host, port, path, user and password.
+    Example: https://user:password@host:port/path
+
+:   proxy
+    Is of the form "host:port".
+
+:   timeout
+    Defaults to 30.
+
+--- XMLRPC::Client.new3( hash={} )
+--- XMLRPC::Client.new_from_hash( hash={} )
+    Parameter ((|hash|)) has following case-insensitive keys:
+    * host
+    * path
+    * port
+    * proxy_host
+    * proxy_port
+    * user
+    * password
+    * use_ssl
+    * timeout
+
+    Calls ((<XMLRPC::Client.new>)) with the corresponding values.
+
+== Instance Methods
+--- XMLRPC::Client#call( method, *args )
+    Invokes the method named ((|method|)) with the parameters given by
+    ((|args|)) on the XML-RPC server.
+    The parameter ((|method|)) is converted into a (({String})) and should
+    be a valid XML-RPC method-name.
+    Each parameter of ((|args|)) must be of one of the following types,
+    where (({Hash})), (({Struct})) and (({Array})) can contain any of these listed ((:types:)):
+    * (({Fixnum})), (({Bignum}))
+    * (({TrueClass})), (({FalseClass})) ((({true})), (({false})))
+    * (({String})), (({Symbol}))
+    * (({Float}))
+    * (({Hash})), (({Struct}))
+    * (({Array}))
+    * (({Date})), (({Time})), (({XMLRPC::DateTime}))
+    * (({XMLRPC::Base64}))
+    * A Ruby object which class includes XMLRPC::Marshallable (only if Config::ENABLE_MARSHALLABLE is (({true}))).
+      That object is converted into a hash, with one additional key/value pair "___class___" which contains the class name
+      for restoring later that object.
+
+    The method returns the return-value from the RPC
+    ((-stands for Remote Procedure Call-)).
+    The type of the return-value is one of the above shown,
+    only that a (({Bignum})) is only allowed when it fits in 32-bit and
+    that a XML-RPC (('dateTime.iso8601')) type is always returned as
+    a ((<(({XMLRPC::DateTime}))|URL:datetime.html>)) object and
+    a (({Struct})) is never returned, only a (({Hash})), the same for a (({Symbol})), where
+    always a (({String})) is returned.
+    A (({XMLRPC::Base64})) is returned as a (({String})) from xmlrpc4r version 1.6.1 on.
+
+    If the remote procedure returned a fault-structure, then a
+    (({XMLRPC::FaultException})) exception is raised, which has two accessor-methods
+    (({faultCode})) and (({faultString})) of type (({Integer})) and (({String})).
+
+--- XMLRPC::Client#call2( method, *args )
+    The difference between this method and ((<call|XMLRPC::Client#call>)) is, that
+    this method do ((*not*)) raise a (({XMLRPC::FaultException})) exception.
+    The method returns an array of two values. The first value indicates if
+    the second value is a return-value ((({true}))) or an object of type
+    (({XMLRPC::FaultException})).
+    Both are explained in ((<call|XMLRPC::Client#call>)).
+
+    Simple to remember: The "2" in "call2" denotes the number of values it returns.
+
+--- XMLRPC::Client#multicall( *methods )
+    You can use this method to execute several methods on a XMLRPC server which supports
+    the multi-call extension.
+    Example:
+
+      s.multicall(
+        ['michael.add', 3, 4],
+        ['michael.sub', 4, 5]
+      )
+      # => [7, -1]
+
+--- XMLRPC::Client#multicall2( *methods )
+    Same as ((<XMLRPC::Client#multicall>)), but returns like ((<XMLRPC::Client#call2>)) two parameters
+    instead of raising an (({XMLRPC::FaultException})).
+
+--- XMLRPC::Client#proxy( prefix, *args )
+    Returns an object of class (({XMLRPC::Client::Proxy})), initialized with
+    ((|prefix|)) and ((|args|)). A proxy object returned by this method behaves
+    like ((<XMLRPC::Client#call>)), i.e. a call on that object will raise a
+    (({XMLRPC::FaultException})) when a fault-structure is returned by that call.
+
+--- XMLRPC::Client#proxy2( prefix, *args )
+    Almost the same like ((<XMLRPC::Client#proxy>)) only that a call on the returned
+    (({XMLRPC::Client::Proxy})) object behaves like ((<XMLRPC::Client#call2>)), i.e.
+    a call on that object will return two parameters.
+
+
+
+
+--- XMLRPC::Client#call_async(...)
+--- XMLRPC::Client#call2_async(...)
+--- XMLRPC::Client#multicall_async(...)
+--- XMLRPC::Client#multicall2_async(...)
+--- XMLRPC::Client#proxy_async(...)
+--- XMLRPC::Client#proxy2_async(...)
+    In contrast to corresponding methods without "_async", these can be
+    called concurrently and use for each request a new connection, where the
+    non-asynchronous counterparts use connection-alive (one connection for all requests)
+    if possible.
+
+    Note, that you have to use Threads to call these methods concurrently.
+    The following example calls two methods concurrently:
+
+      Thread.new {
+        p client.call_async("michael.add", 4, 5)
+      }
+
+      Thread.new {
+        p client.call_async("michael.div", 7, 9)
+      }
+
+
+--- XMLRPC::Client#timeout
+--- XMLRPC::Client#user
+--- XMLRPC::Client#password
+    Return the corresponding attributes.
+
+--- XMLRPC::Client#timeout= (new_timeout)
+--- XMLRPC::Client#user= (new_user)
+--- XMLRPC::Client#password= (new_password)
+    Set the corresponding attributes.
+
+
+--- XMLRPC::Client#set_writer( writer )
+    Sets the XML writer to use for generating XML output.
+    Should be an instance of a class from module (({XMLRPC::XMLWriter})).
+    If this method is not called, then (({XMLRPC::Config::DEFAULT_WRITER})) is used.
+
+--- XMLRPC::Client#set_parser( parser )
+    Sets the XML parser to use for parsing XML documents.
+    Should be an instance of a class from module (({XMLRPC::XMLParser})).
+    If this method is not called, then (({XMLRPC::Config::DEFAULT_PARSER})) is used.
+
+--- XMLRPC::Client#cookie
+--- XMLRPC::Client#cookie= (cookieString)
+    Get and set the HTTP Cookie header.
+
+--- XMLRPC::Client#http_header_extra= (additionalHeaders)
+    Set extra HTTP headers that are included in the request.
+
+--- XMLRPC::Client#http_header_extra
+    Access the via ((<XMLRPC::Client#http_header_extra=>)) assigned header.
+
+--- XMLRPC::Client#http_last_response
+    Returns the (({Net::HTTPResponse})) object of the last RPC.
+
+= XMLRPC::Client::Proxy
+== Synopsis
+    require "xmlrpc/client"
+
+    server = XMLRPC::Client.new("www.ruby-lang.org", "/RPC2", 80)
+
+    michael  = server.proxy("michael")
+    michael2 = server.proxy("michael", 4)
+
+    # both calls should return the same value '9'.
+    p michael.add(4,5)
+    p michael2.add(5)
+
+== Description
+Class (({XMLRPC::Client::Proxy})) makes XML-RPC calls look nicer!
+You can call any method onto objects of that class - the object handles
+(({method_missing})) and will forward the method call to a XML-RPC server.
+Don't use this class directly, but use instead method ((<XMLRPC::Client#proxy>)) or
+((<XMLRPC::Client#proxy2>)).
+
+== Class Methods
+--- XMLRPC::Client::Proxy.new( server, prefix, args=[], meth=:call, delim="." )
+    Creates an object which provides (({method_missing})).
+
+    ((|server|)) must be of type (({XMLRPC::Client})), which is the XML-RPC server to be used
+    for a XML-RPC call. ((|prefix|)) and ((|delim|)) will be prepended to the methodname
+    called onto this object.
+
+    Parameter ((|meth|)) is the method (call, call2, call_async, call2_async) to use for
+    a RPC.
+
+    ((|args|)) are arguments which are automatically given
+    to every XML-RPC call before the arguments provides through (({method_missing})).
+
+== Instance Methods
+Every method call is forwarded to the XML-RPC server defined in ((<new|XMLRPC::Client::Proxy#new>)).
+
+Note: Inherited methods from class (({Object})) cannot be used as XML-RPC names, because they get around
+(({method_missing})).
+
+
+
+= History
+    $Id: client.rb 25189 2009-10-02 12:04:37Z akr $
+
+=end
+
+
+
+require "xmlrpc/parser"
+require "xmlrpc/create"
+require "xmlrpc/config"
+require "xmlrpc/utils"     # ParserWriterChooseMixin
+require "net/http"
+
+module XMLRPC
+
+  class Client
+
+    USER_AGENT = "XMLRPC::Client (Ruby #{RUBY_VERSION})"
+
+    include ParserWriterChooseMixin
+    include ParseContentType
+
+
+    # Constructors -------------------------------------------------------------------
+
+    def initialize(host=nil, path=nil, port=nil, proxy_host=nil, proxy_port=nil,
+                   user=nil, password=nil, use_ssl=nil, timeout=nil)
+
+      @http_header_extra = nil
+      @http_last_response = nil
+      @cookie = nil
+
+      @host       = host || "localhost"
+      @path       = path || "/RPC2"
+      @proxy_host = proxy_host
+      @proxy_port = proxy_port
+      @proxy_host ||= 'localhost' if @proxy_port != nil
+      @proxy_port ||= 8080 if @proxy_host != nil
+      @use_ssl    = use_ssl || false
+      @timeout    = timeout || 30
+
+      if use_ssl
+        require "net/https"
+        @port = port || 443
+      else
+        @port = port || 80
+      end
+
+      @user, @password = user, password
+
+      set_auth
+
+      # convert ports to integers
+      @port = @port.to_i if @port != nil
+      @proxy_port = @proxy_port.to_i if @proxy_port != nil
+
+      # HTTP object for synchronous calls
+      Net::HTTP.version_1_2
+      @http = Net::HTTP.new(@host, @port, @proxy_host, @proxy_port)
+      @http.use_ssl = @use_ssl if @use_ssl
+      @http.read_timeout = @timeout
+      @http.open_timeout = @timeout
+
+      @parser = nil
+      @create = nil
+    end
+
+
+    class << self
+
+    def new2(uri, proxy=nil, timeout=nil)
+      if match = /^([^:]+):\/\/(([^@]+)@)?([^\/]+)(\/.*)?$/.match(uri)
+        proto = match[1]
+        user, passwd = (match[3] || "").split(":")
+        host, port = match[4].split(":")
+        path = match[5]
+
+        if proto != "http" and proto != "https"
+          raise "Wrong protocol specified. Only http or https allowed!"
+        end
+
+      else
+        raise "Wrong URI as parameter!"
+      end
+
+      proxy_host, proxy_port = (proxy || "").split(":")
+
+      self.new(host, path, port, proxy_host, proxy_port, user, passwd, (proto == "https"), timeout)
+    end
+
+    alias new_from_uri new2
+
+    def new3(hash={})
+
+      # convert all keys into lowercase strings
+      h = {}
+      hash.each { |k,v| h[k.to_s.downcase] = v }
+
+      self.new(h['host'], h['path'], h['port'], h['proxy_host'], h['proxy_port'], h['user'], h['password'],
+               h['use_ssl'], h['timeout'])
+    end
+
+    alias new_from_hash new3
+
+    end
+
+
+    # Attribute Accessors -------------------------------------------------------------------
+
+    # add additional HTTP headers to the request
+    attr_accessor :http_header_extra
+
+    # makes last HTTP response accessible
+    attr_reader :http_last_response
+
+    # Cookie support
+    attr_accessor :cookie
+
+
+    attr_reader :timeout, :user, :password
+
+    def timeout=(new_timeout)
+      @timeout = new_timeout
+      @http.read_timeout = @timeout
+      @http.open_timeout = @timeout
+    end
+
+    def user=(new_user)
+      @user = new_user
+      set_auth
+    end
+
+    def password=(new_password)
+      @password = new_password
+      set_auth
+    end
+
+    # Call methods --------------------------------------------------------------
+
+    def call(method, *args)
+      ok, param = call2(method, *args)
+      if ok
+        param
+      else
+        raise param
+      end
+    end
+
+    def call2(method, *args)
+      request = create().methodCall(method, *args)
+      data = do_rpc(request, false)
+      parser().parseMethodResponse(data)
+    end
+
+    def call_async(method, *args)
+      ok, param = call2_async(method, *args)
+      if ok
+        param
+      else
+        raise param
+      end
+    end
+
+    def call2_async(method, *args)
+      request = create().methodCall(method, *args)
+      data = do_rpc(request, true)
+      parser().parseMethodResponse(data)
+    end
+
+
+    # Multicall methods --------------------------------------------------------------
+
+    def multicall(*methods)
+      ok, params = multicall2(*methods)
+      if ok
+        params
+      else
+        raise params
+      end
+    end
+
+    def multicall2(*methods)
+      gen_multicall(methods, false)
+    end
+
+    def multicall_async(*methods)
+      ok, params = multicall2_async(*methods)
+      if ok
+        params
+      else
+        raise params
+      end
+    end
+
+    def multicall2_async(*methods)
+      gen_multicall(methods, true)
+    end
+
+
+    # Proxy generating methods ------------------------------------------
+
+    def proxy(prefix=nil, *args)
+      Proxy.new(self, prefix, args, :call)
+    end
+
+    def proxy2(prefix=nil, *args)
+      Proxy.new(self, prefix, args, :call2)
+    end
+
+    def proxy_async(prefix=nil, *args)
+      Proxy.new(self, prefix, args, :call_async)
+    end
+
+    def proxy2_async(prefix=nil, *args)
+      Proxy.new(self, prefix, args, :call2_async)
+    end
+
+
+    private # ----------------------------------------------------------
+
+    def set_auth
+      if @user.nil?
+        @auth = nil
+      else
+        a =  "#@user"
+        a << ":#@password" if @password != nil
+        @auth = ("Basic " + [a].pack("m")).chomp
+      end
+    end
+
+    def do_rpc(request, async=false)
+      header = {
+       "User-Agent"     =>  USER_AGENT,
+       "Content-Type"   => "text/xml; charset=utf-8",
+       "Content-Length" => request.size.to_s,
+       "Connection"     => (async ? "close" : "keep-alive")
+      }
+
+      header["Cookie"] = @cookie        if @cookie
+      header.update(@http_header_extra) if @http_header_extra
+
+      if @auth != nil
+        # add authorization header
+        header["Authorization"] = @auth
+      end
+
+      resp = nil
+      @http_last_response = nil
+
+      if async
+        # use a new HTTP object for each call
+        Net::HTTP.version_1_2
+        http = Net::HTTP.new(@host, @port, @proxy_host, @proxy_port)
+        http.use_ssl = @use_ssl if @use_ssl
+        http.read_timeout = @timeout
+        http.open_timeout = @timeout
+
+        # post request
+        http.start {
+          resp = http.post2(@path, request, header)
+        }
+      else
+        # reuse the HTTP object for each call => connection alive is possible
+        # we must start connection explicitely first time so that http.request
+        # does not assume that we don't want keepalive
+        @http.start if not @http.started?
+
+        # post request
+        resp = @http.post2(@path, request, header)
+      end
+
+      @http_last_response = resp
+
+      data = resp.body
+
+      if resp.code == "401"
+        # Authorization Required
+        raise "Authorization failed.\nHTTP-Error: #{resp.code} #{resp.message}"
+      elsif resp.code[0,1] != "2"
+        raise "HTTP-Error: #{resp.code} #{resp.message}"
+      end
+
+      ct = parse_content_type(resp["Content-Type"]).first
+      if ct != "text/xml"
+        if ct == "text/html"
+          raise "Wrong content-type (received '#{ct}' but expected 'text/xml'): \n#{data}"
+        else
+          raise "Wrong content-type (received '#{ct}' but expected 'text/xml')"
+        end
+      end
+
+      expected = resp["Content-Length"] || "<unknown>"
+      if data.nil? or data.size == 0
+        raise "Wrong size. Was #{data.size}, should be #{expected}"
+      elsif expected != "<unknown>" and expected.to_i != data.size and resp["Transfer-Encoding"].nil?
+        raise "Wrong size. Was #{data.size}, should be #{expected}"
+      end
+
+      set_cookies = resp.get_fields("Set-Cookie")
+      if set_cookies and !set_cookies.empty?
+        require 'webrick/cookie'
+        @cookie = set_cookies.collect do |set_cookie|
+          cookie = WEBrick::Cookie.parse_set_cookie(set_cookie)
+          WEBrick::Cookie.new(cookie.name, cookie.value).to_s
+        end.join("; ")
+      end
+
+      return data
+    end
+
+    def gen_multicall(methods=[], async=false)
+      meth = :call2
+      meth = :call2_async if async
+
+      ok, params = self.send(meth, "system.multicall",
+        methods.collect {|m| {'methodName' => m[0], 'params' => m[1..-1]} }
+      )
+
+      if ok
+        params = params.collect do |param|
+          if param.is_a? Array
+            param[0]
+          elsif param.is_a? Hash
+            XMLRPC::FaultException.new(param["faultCode"], param["faultString"])
+          else
+            raise "Wrong multicall return value"
+          end
+        end
+      end
+
+      return ok, params
+    end
+
+
+
+    class Proxy
+
+      def initialize(server, prefix, args=[], meth=:call, delim=".")
+        @server = server
+        @prefix = prefix ? prefix + delim : ""
+        @args   = args
+        @meth   = meth
+      end
+
+      def method_missing(mid, *args)
+        pre = @prefix + mid.to_s
+        arg = @args + args
+        @server.send(@meth, pre, *arg)
+      end
+
+    end # class Proxy
+
+  end # class Client
+
+end # module XMLRPC
+
+#
+#   nop.rb - 
+#   	$Release Version: 0.9.5$
+#   	$Revision: 11708 $
+#   	$Date: 2007-02-12 15:01:19 -0800 (Mon, 12 Feb 2007) $
+#   	by Keiju ISHITSUKA(keiju@ruby-lang.org)
+#
+# --
+#
+#   
+#
+module IRB
+  module ExtendCommand
+    class Nop
+      
+      @RCS_ID='-$Id: nop.rb 11708 2007-02-12 23:01:19Z shyouhei $-'
+
+      def self.execute(conf, *opts)
+	command = new(conf)
+	command.execute(*opts)
+      end
+
+      def initialize(conf)
+	@irb_context = conf
+      end
+
+      attr_reader :irb_context
+
+      def irb
+	@irb_context.irb
+      end
+
+      def execute(*opts)
+	#nop
+      end
+    end
+  end
+end
+
+# -*- coding: utf-8 -*-
+
+require 'test/unit'
+
+class TestUnicodeEscape < Test::Unit::TestCase
+  def test_basic
+    assert_equal('Matz - 松本行弘',
+      "Matz - \u677E\u672C\u884C\u5F18")
+    assert_equal('Matz - まつもと ゆきひろ',
+      "Matz - \u307E\u3064\u3082\u3068 \u3086\u304D\u3072\u308D")
+    assert_equal('Matz - まつもと ゆきひろ',
+                 "Matz - \u{307E}\u{3064}\u{3082}\u{3068} \u{3086}\u{304D}\u{3072}\u{308D}")
+    assert_equal('Matz - まつもと ゆきひろ',
+                 "Matz - \u{307E 3064 3082 3068 20 3086 304D 3072 308D}")
+    assert_equal("Aoyama Gakuin University - \xE9\x9D\x92\xE5\xB1\xB1\xE5\xAD\xA6\xE9\x99\xA2\xE5\xA4\xA7\xE5\xAD\xA6",
+      "Aoyama Gakuin University - \u9752\u5C71\u5B66\u9662\u5927\u5B66")
+    assert_equal('Aoyama Gakuin University - 青山学院大学',
+      "Aoyama Gakuin University - \u9752\u5C71\u5B66\u9662\u5927\u5B66")
+    assert_equal('青山学院大学', "\u9752\u5C71\u5B66\u9662\u5927\u5B66")
+    assert_equal("Martin D\xC3\xBCrst", "Martin D\u00FCrst")
+    assert_equal('Martin Dürst', "Martin D\u00FCrst")
+    assert_equal('ü', "\u00FC")
+    assert_equal("Martin D\xC3\xBCrst", "Martin D\u{FC}rst")
+    assert_equal('Martin Dürst', "Martin D\u{FC}rst")
+    assert_equal('ü', "\u{FC}")
+    assert_equal('ü', %Q|\u{FC}|)
+    assert_equal('ü', %W{\u{FC}}[0])
+
+    # \u escapes in here documents
+    assert_equal('Matz - まつもと ゆきひろ', <<EOS.chop)
+Matz - \u307E\u3064\u3082\u3068 \u3086\u304D\u3072\u308D
+EOS
+
+    assert_equal('Matz - まつもと ゆきひろ', <<"EOS".chop)
+Matz - \u{307E 3064 3082 3068} \u{3086 304D 3072 308D}
+EOS
+    assert_not_equal('Matz - まつもと ゆきひろ', <<'EOS'.chop)
+Matz - \u{307E 3064 3082 3068} \u{3086 304D 3072 308D}
+EOS
+
+    # single-quoted things don't expand \u
+    assert_not_equal('ü', '\u{FC}')
+    assert_not_equal('ü', %q|\u{FC}|)
+    assert_not_equal('ü', %w{\u{FC}}[0])
+    assert_equal('\u00fc', "\\" + "u00fc")
+
+    # \u in %x strings
+    assert_match(/^("?)A\1$/, `echo "\u0041"`) #"
+    assert_match(/^("?)A\1$/, %x{echo "\u0041"}) #"
+    assert_match(/^("?)ü\1$/, `echo "\u{FC}"`.force_encoding("utf-8")) #"
+
+    # \u in quoted symbols
+    assert_equal(:A, :"\u0041")
+    assert_equal(:a, :"\u0061")
+    assert_equal(:ま, :ま)
+    assert_equal(:ü, :ü)
+    assert_equal(:"\u{41}", :"\u0041")
+    assert_equal(:ü, :"\u{fc}")
+
+    # the NUL character is allowed in symbols
+    bug = '[ruby-dev:41447]'
+    sym = "\0".to_sym
+    assert_nothing_raised(SyntaxError, bug) {assert_equal(sym, eval(%q(:"\u{0}")))}
+    assert_nothing_raised(SyntaxError, bug) {assert_equal(sym, eval(%q(:"\u0000")))}
+    assert_nothing_raised(SyntaxError, bug) {assert_equal("\u{fc}\0A".to_sym, eval(%q(:"\u{fc 0 0041}")))}
+    assert_nothing_raised(SyntaxError, bug) {assert_equal(sym, eval(%q(:"\x00")))}
+    assert_nothing_raised(SyntaxError, bug) {assert_equal(sym, eval(%q(:"\0")))}
+  end
+
+  def test_regexp
+
+    # Compare regexps to regexps
+    assert_not_equal(/Yukihiro Matsumoto - 松本行弘/,
+      /Yukihiro Matsumoto - \u677E\u672C\u884C\u5F18/)
+    assert_not_equal(/Yukihiro Matsumoto - 松本行弘/,
+      /Yukihiro Matsumoto - \u{677E 672C 884C 5F18}/)
+    assert_not_equal(/Matz - まつもと ゆきひろ/,
+      /Matz - \u307E\u3064\u3082\u3068 \u3086\u304D\u3072\u308D/)
+    assert_not_equal(/Aoyama Gakuin University - 青山学院大学/,
+      /Aoyama Gakuin University - \u9752\u5C71\u5B66\u9662\u5927\u5B66/)
+    assert_not_equal(/青山学院大学/, /\u9752\u5C71\u5B66\u9662\u5927\u5B66/)
+    assert_not_equal(/Martin Dürst/, /Martin D\u00FCrst/)
+    assert_not_equal(/ü/, /\u00FC/)
+    assert_not_equal(/Martin Dürst/, /Martin D\u{FC}rst/)
+    assert_not_equal(/ü/, /\u{FC}/)
+    assert_not_equal(/ü/, %r{\u{FC}})
+    assert_not_equal(/ü/i, %r{\u00FC}i)
+
+    assert_equal('Yukihiro Matsumoto - \u677E\u672C\u884C\u5F18',
+      /Yukihiro Matsumoto - \u677E\u672C\u884C\u5F18/.source)
+    assert_equal('Yukihiro Matsumoto - \u{677E 672C 884C 5F18}',
+      /Yukihiro Matsumoto - \u{677E 672C 884C 5F18}/.source)
+    assert_equal('Matz - \u307E\u3064\u3082\u3068 \u3086\u304D\u3072\u308D',
+      /Matz - \u307E\u3064\u3082\u3068 \u3086\u304D\u3072\u308D/.source)
+    assert_equal('Aoyama Gakuin University - \u9752\u5C71\u5B66\u9662\u5927\u5B66',
+      /Aoyama Gakuin University - \u9752\u5C71\u5B66\u9662\u5927\u5B66/.source)
+    assert_equal('\u9752\u5C71\u5B66\u9662\u5927\u5B66',
+      /\u9752\u5C71\u5B66\u9662\u5927\u5B66/.source)
+    assert_equal('Martin D\u00FCrst', /Martin D\u00FCrst/.source)
+    assert_equal('\u00FC', /\u00FC/.source)
+    assert_equal('Martin D\u{FC}rst', /Martin D\u{FC}rst/.source)
+    assert_equal('\u{FC}', /\u{FC}/.source)
+    assert_equal('\u{FC}', %r{\u{FC}}.source)
+    assert_equal('\u00FC', %r{\u00FC}i.source)
+
+    # match strings to regexps
+    assert_equal(0, "Yukihiro Matsumoto - 松本行弘" =~ /Yukihiro Matsumoto - \u677E\u672C\u884C\u5F18/)
+    assert_equal(0, "Yukihiro Matsumoto - \u677E\u672C\u884C\u5F18" =~ /Yukihiro Matsumoto - \u677E\u672C\u884C/)
+    assert_equal(0, "Yukihiro Matsumoto - 松本行弘" =~            /Yukihiro Matsumoto - \u{677E 672C 884C 5F18}/)
+    assert_equal(0, %Q{Yukihiro Matsumoto - \u{677E 672C 884C 5F18}} =~ /Yukihiro Matsumoto - \u{677E 672C 884C 5F18}/)
+    assert_equal(0, "Matz - まつもと ゆきひろ" =~ /Matz - \u307E\u3064\u3082\u3068 \u3086\u304D\u3072\u308D/)
+    assert_equal(0, "Aoyama Gakuin University - 青山学院大学" =~ /Aoyama Gakuin University - \u9752\u5C71\u5B66\u9662\u5927\u5B66/)
+    assert_equal(0, "青山学院大学" =~ /\u9752\u5C71\u5B66\u9662\u5927\u5B66/)
+    assert_equal(0, "Martin Dürst" =~ /Martin D\u00FCrst/)
+    assert_equal(0, "ü" =~ /\u00FC/)
+    assert_equal(0, "Martin Dürst" =~ /Martin D\u{FC}rst/)
+    assert_equal(0, "ü" =~ %r{\u{FC}})
+    assert_equal(0, "ü" =~ %r{\u00FC}i)
+
+    # Flip order of the two operands
+    assert_equal(0, /Martin D\u00FCrst/ =~ "Martin Dürst")
+    assert_equal(4, /\u00FC/ =~ "testü")
+    assert_equal(3, /Martin D\u{FC}rst/ =~ "fooMartin Dürstbar")
+    assert_equal(3, %r{\u{FC}} =~ "fooübar")
+
+    # Put \u in strings, literal character in regexp
+    assert_equal(0, "Martin D\u00FCrst" =~ /Martin Dürst/)
+    assert_equal(4, "test\u00FC" =~ /ü/)
+    assert_equal(3, "fooMartin D\u{FC}rstbar" =~ /Martin Dürst/)
+    assert_equal(3, %Q{foo\u{FC}bar} =~ %r<ü>)
+
+    assert_match(eval('/\u{2a}/'), "*")
+    assert_raise(SyntaxError) { eval('/\u{6666}/n') }
+    assert_raise(SyntaxError) { eval('/\u{6666}/e') }
+    assert_raise(SyntaxError) { eval('/\u{6666}/s') }
+    assert_nothing_raised { eval('/\u{6666}/u') }
+  end
+
+  def test_dynamic_regexp
+    assert_match(Regexp.new("Martin D\\u{FC}rst"), "Martin Dürst")
+  end
+
+  def test_syntax_variants
+    # all hex digits
+    assert_equal("\xC4\xA3\xE4\x95\xA7\xE8\xA6\xAB\xEC\xB7\xAF", "\u0123\u4567\u89AB\uCDEF")
+    assert_equal("\xC4\xA3\xE4\x95\xA7\xE8\xA6\xAB\xEC\xB7\xAF", "\u0123\u4567\u89AB\uCDEF")
+    assert_equal("\xC4\xA3\xE4\x95\xA7\xE8\xA6\xAB\xEC\xB7\xAF", "\u0123\u4567\u89ab\ucdef")
+    assert_equal("\xC4\xA3\xE4\x95\xA7\xE8\xA6\xAB\xEC\xB7\xAF", "\u0123\u4567\u89ab\ucdef")
+    assert_equal("\xC4\xA3\xE4\x95\xA7\xE8\xA6\xAB\xEC\xB7\xAF", "\u0123\u4567\u89aB\uCdEf")
+    assert_equal("\xC4\xA3\xE4\x95\xA7\xE8\xA6\xAB\xEC\xB7\xAF", "\u0123\u4567\u89aB\ucDEF")
+  end
+
+  def test_fulton
+    # examples from Hal Fulton's book (second edition), chapter 4
+    # precomposed e'pe'e
+    assert_equal('épée', "\u00E9\u0070\u00E9\u0065")
+    assert_equal('épée', "\u00E9p\u00E9e")
+    assert_equal("\xC3\xA9\x70\xC3\xA9\x65", "\u00E9\u0070\u00E9\u0065")
+    assert_equal("\xC3\xA9\x70\xC3\xA9\x65", "\u00E9p\u00E9e")
+    # decomposed e'pe'e
+    assert_equal('épée', "\u0065\u0301\u0070\u0065\u0301\u0065")
+    assert_equal('épée', "e\u0301pe\u0301e")
+    assert_equal("\x65\xCC\x81\x70\x65\xCC\x81\x65", "\u0065\u0301\u0070\u0065\u0301\u0065")
+    assert_equal("\x65\xCC\x81\x70\x65\xCC\x81\x65", "e\u0301pe\u0301e")
+    # combinations of NFC/D, NFKC/D
+    assert_equal('öffnen', "\u00F6\u0066\u0066\u006E\u0065\u006E")
+    assert_equal("\xC3\xB6ffnen", "\u00F6\u0066\u0066\u006E\u0065\u006E")
+    assert_equal('öffnen', "\u00F6ffnen")
+    assert_equal("\xC3\xB6ffnen", "\u00F6ffnen")
+    assert_equal('öffnen', "\u006F\u0308\u0066\u0066\u006E\u0065\u006E")
+    assert_equal("\x6F\xCC\x88ffnen", "\u006F\u0308\u0066\u0066\u006E\u0065\u006E")
+    assert_equal('öffnen', "o\u0308ffnen")
+    assert_equal("\x6F\xCC\x88ffnen", "o\u0308ffnen")
+    assert_equal('öﬀnen', "\u00F6\uFB00\u006E\u0065\u006E")
+    assert_equal("\xC3\xB6\xEF\xAC\x80nen", "\u00F6\uFB00\u006E\u0065\u006E")
+    assert_equal('öﬀnen', "\u00F6\uFB00nen")
+    assert_equal("\xC3\xB6\xEF\xAC\x80nen", "\u00F6\uFB00nen")
+    assert_equal('öﬀnen', "\u006F\u0308\uFB00\u006E\u0065\u006E")
+    assert_equal("\x6F\xCC\x88\xEF\xAC\x80nen", "\u006F\u0308\uFB00\u006E\u0065\u006E")
+    assert_equal('öﬀnen', "o\u0308\uFB00nen")
+    assert_equal("\x6F\xCC\x88\xEF\xAC\x80nen", "o\u0308\uFB00nen")
+    # German sharp s (sz)
+    assert_equal('Straße', "\u0053\u0074\u0072\u0061\u00DF\u0065")
+    assert_equal("\x53\x74\x72\x61\xC3\x9F\x65", "\u0053\u0074\u0072\u0061\u00DF\u0065")
+    assert_equal('Straße', "Stra\u00DFe")
+    assert_equal("\x53\x74\x72\x61\xC3\x9F\x65", "Stra\u00DFe")
+    assert_equal('Straße', "\u{53}\u{74}\u{72}\u{61}\u{DF}\u{65}")
+    assert_equal("\x53\x74\x72\x61\xC3\x9F\x65", "\u{53}\u{74}\u{72}\u{61}\u{DF}\u{65}")
+    assert_equal("\x53\x74\x72\x61\xC3\x9F\x65", "\u{53 74 72 61 DF 65}")
+    assert_equal('Straße', "Stra\u{DF}e")
+    assert_equal("\x53\x74\x72\x61\xC3\x9F\x65", "Stra\u{DF}e")
+  end
+
+  def test_edge_cases
+    # start and end of each outer plane
+    assert_equal("\xF4\x8F\xBF\xBF", "\u{10FFFF}")
+    assert_equal("\xF4\x80\x80\x80", "\u{100000}")
+    assert_equal("\xF3\xBF\xBF\xBF", "\u{FFFFF}")
+    assert_equal("\xF3\xB0\x80\x80", "\u{F0000}")
+    assert_equal("\xF3\xAF\xBF\xBF", "\u{EFFFF}")
+    assert_equal("\xF3\xA0\x80\x80", "\u{E0000}")
+    assert_equal("\xF3\x9F\xBF\xBF", "\u{DFFFF}")
+    assert_equal("\xF3\x90\x80\x80", "\u{D0000}")
+    assert_equal("\xF3\x8F\xBF\xBF", "\u{CFFFF}")
+    assert_equal("\xF3\x80\x80\x80", "\u{C0000}")
+    assert_equal("\xF2\xBF\xBF\xBF", "\u{BFFFF}")
+    assert_equal("\xF2\xB0\x80\x80", "\u{B0000}")
+    assert_equal("\xF2\xAF\xBF\xBF", "\u{AFFFF}")
+    assert_equal("\xF2\xA0\x80\x80", "\u{A0000}")
+    assert_equal("\xF2\x9F\xBF\xBF", "\u{9FFFF}")
+    assert_equal("\xF2\x90\x80\x80", "\u{90000}")
+    assert_equal("\xF2\x8F\xBF\xBF", "\u{8FFFF}")
+    assert_equal("\xF2\x80\x80\x80", "\u{80000}")
+    assert_equal("\xF1\xBF\xBF\xBF", "\u{7FFFF}")
+    assert_equal("\xF1\xB0\x80\x80", "\u{70000}")
+    assert_equal("\xF1\xAF\xBF\xBF", "\u{6FFFF}")
+    assert_equal("\xF1\xA0\x80\x80", "\u{60000}")
+    assert_equal("\xF1\x9F\xBF\xBF", "\u{5FFFF}")
+    assert_equal("\xF1\x90\x80\x80", "\u{50000}")
+    assert_equal("\xF1\x8F\xBF\xBF", "\u{4FFFF}")
+    assert_equal("\xF1\x80\x80\x80", "\u{40000}")
+    assert_equal("\xF0\xBF\xBF\xBF", "\u{3FFFF}")
+    assert_equal("\xF0\xB0\x80\x80", "\u{30000}")
+    assert_equal("\xF0\xAF\xBF\xBF", "\u{2FFFF}")
+    assert_equal("\xF0\xA0\x80\x80", "\u{20000}")
+    assert_equal("\xF0\x9F\xBF\xBF", "\u{1FFFF}")
+    assert_equal("\xF0\x90\x80\x80", "\u{10000}")
+    # BMP
+    assert_equal("\xEF\xBF\xBF", "\uFFFF")
+    assert_equal("\xEE\x80\x80", "\uE000")
+    assert_equal("\xED\x9F\xBF", "\uD7FF")
+    assert_equal("\xE0\xA0\x80", "\u0800")
+    assert_equal("\xDF\xBF", "\u07FF")
+    assert_equal("\xC2\x80", "\u0080")
+    assert_equal("\x7F", "\u007F")
+    assert_equal("\x00", "\u0000")
+  end
+
+  def test_chars
+    assert_equal(?\u0041, ?A)
+    assert_equal(?\u{79}, ?\x79)
+    assert_equal(?\u{0}, ?\000)
+    assert_equal(?\u0000, ?\000)
+  end
+
+  # Tests to make sure that disallowed cases fail
+  def test_fail
+     assert_raise(SyntaxError) { eval %q("\uabc") }        # too short
+     assert_raise(SyntaxError) { eval %q("\uab") }         # too short
+     assert_raise(SyntaxError) { eval %q("\ua") }          # too short
+     assert_raise(SyntaxError) { eval %q("\u") }           # too short
+     assert_raise(SyntaxError) { eval %q("\u{110000}") }   # too high
+     assert_raise(SyntaxError) { eval %q("\u{abcdeff}") }  # too long
+     assert_raise(SyntaxError) { eval %q("\ughij") }       # bad hex digits
+     assert_raise(SyntaxError) { eval %q("\u{ghij}") }     # bad hex digits
+
+     assert_raise(SyntaxError) { eval %q("\u{123 456 }")}  # extra space
+     assert_raise(SyntaxError) { eval %q("\u{ 123 456}")}  # extra space
+     assert_raise(SyntaxError) { eval %q("\u{123  456}")}  # extra space
+
+# The utf-8 encoding object currently does not object to codepoints
+# in the surrogate blocks, so these do not raise an error.
+#     assert_raise(SyntaxError) { "\uD800" }       # surrogate block
+#     assert_raise(SyntaxError) { "\uDCBA" }       # surrogate block
+#     assert_raise(SyntaxError) { "\uDFFF" }       # surrogate block
+#     assert_raise(SyntaxError) { "\uD847\uDD9A" } # surrogate pair
+
+  end
+end
+#!/usr/local/bin/ruby
+#
+#   save-history.rb - 
+#   	$Release Version: 0.9.5$
+#   	$Revision: 24483 $
+#   	$Date: 2009-08-09 17:44:15 +0900 (Sun, 09 Aug 2009) $
+#   	by Keiju ISHITSUKAkeiju@ruby-lang.org)
+#
+# --
+#
+#   
+#
+
+require "readline"
+
+module IRB
+  module HistorySavingAbility
+    @RCS_ID='-$Id: save-history.rb 24483 2009-08-09 08:44:15Z shyouhei $-'
+  end
+
+  class Context
+    def init_save_history
+      unless (class<<@io;self;end).include?(HistorySavingAbility)
+	@io.extend(HistorySavingAbility)
+      end
+    end
+
+    def save_history
+      IRB.conf[:SAVE_HISTORY]
+    end
+
+    def save_history=(val)
+      IRB.conf[:SAVE_HISTORY] = val
+      if val
+	main_context = IRB.conf[:MAIN_CONTEXT]
+	main_context = self unless main_context
+	main_context.init_save_history
+      end
+    end
+
+    def history_file
+      IRB.conf[:HISTORY_FILE]
+    end
+
+    def history_file=(hist)
+      IRB.conf[:HISTORY_FILE] = hist
+    end
+  end
+
+  module HistorySavingAbility
+    include Readline
+
+#     def HistorySavingAbility.create_finalizer
+#       proc do
+# 	if num = IRB.conf[:SAVE_HISTORY] and (num = num.to_i) > 0
+# 	  if hf = IRB.conf[:HISTORY_FILE]
+# 	    file = File.expand_path(hf)
+# 	  end
+# 	  file = IRB.rc_file("_history") unless file
+# 	  open(file, 'w' ) do |f|
+# 	    hist = HISTORY.to_a
+# 	    f.puts(hist[-num..-1] || hist)
+# 	  end
+# 	end
+#       end
+#     end
+
+    def HistorySavingAbility.extended(obj)
+#      ObjectSpace.define_finalizer(obj, HistorySavingAbility.create_finalizer)
+      IRB.conf[:AT_EXIT].push proc{obj.save_history}
+      obj.load_history
+      obj
+    end
+
+    def load_history
+      hist = IRB.conf[:HISTORY_FILE]
+      hist = IRB.rc_file("_history") unless hist
+      if File.exist?(hist)
+	open(hist) do |f|
+	  f.each {|l| HISTORY << l.chomp}
+	end
+      end
+    end
+
+    def save_history
+      if num = IRB.conf[:SAVE_HISTORY] and (num = num.to_i) > 0
+	if history_file = IRB.conf[:HISTORY_FILE]
+	  history_file = File.expand_path(history_file)
+	end
+	history_file = IRB.rc_file("_history") unless history_file
+	open(history_file, 'w' ) do |f|
+	  hist = HISTORY.to_a
+	  f.puts(hist[-num..-1] || hist)
+	end
+      end
+    end
+  end
+end
+
+require 'observer'
+
+class ObserverCallbackSpecs
+  attr_reader :value
+ 
+  def initialize
+    @value = nil
+  end
+
+  def update(value)
+    @value = value
+  end
+end
+
+class ObservableSpecs
+  include Observable
+end

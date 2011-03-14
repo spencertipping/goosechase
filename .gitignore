@@ -1,10 +1,2 @@
-empirical/rb
-empirical/c
-empirical/h
-empirical/pm
-empirical/cc
-empirical/js
-empirical/sh
-empirical/py
-empirical/java
+empirical/*/*
 markov/simple-markov-test-data
